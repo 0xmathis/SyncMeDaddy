@@ -1,0 +1,12 @@
+[package]
+name = "sync_me_daddy"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "client",
+    "server",
+]
+
+[dependencies]
