@@ -1,16 +1,12 @@
-use std::io::Write;
 use std::net::{
     Ipv4Addr,
     TcpStream,
 };
 use std::panic;
 
-mod tcp;
+use smd_protocol::smd_packet::SMDpacket;
 
-fn send_message(mut client: TcpStream, input: &[u8]) {
-    let n: usize = client.write(&input).expect("");
-    println!("{n} characters sended to server");
-}
+mod tcp;
 
 fn main() {
     panic::set_hook(Box::new(|e| {
@@ -28,5 +24,6 @@ fn main() {
         Err(e) => panic!("Error contacting server : {{ {e} }}"),
     };
 
-    send_message(client, &Vec::from("Hello you"));
+    let packet: SMDpacket = SMDpacket::receive_from(client).expect("Error receiving");
+    println!("Received packet : {packet}");
 }
