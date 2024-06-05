@@ -1,37 +1,77 @@
 use std::net::{
-    Ipv4Addr, TcpListener, TcpStream
+    Ipv4Addr, Shutdown, TcpListener, TcpStream
 };
 use std::panic;
+use env_logger:: {
+    Builder,
+    Target,
+};
+use log;
+use clap::Parser;
+use utils::to_valid_syncing_directory;
+use std::path::PathBuf;
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
 
 mod tcp;
+mod user;
+mod utils;
 
 
-fn handle_connection(stream: TcpStream) {
-    println!("Connection established : {:?}", stream);
-
-    let packet: SMDpacket = SMDpacket::new(1, SMDtype::CONNECT, Vec::from("Hello"));
-    println!("Sending packet : {}", packet);
-    let _ = packet.send_to(stream);
+/// SMD Server
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Directory to synchronize
+    sync_directory: String,
 }
 
-fn main() {
+fn init_logger() {
+    Builder::new()
+        .target(Target::Stdout)
+        .filter_level(log::LevelFilter::max())
+        .format_level(true)
+        .format_module_path(false)
+        .format_indent(Some(4))
+        .init();
+}
+
+fn init_hooks() {
     panic::set_hook(Box::new(|e| {
         println!("When I panic I stop\n{e}");
     }));
+}
+
+fn drop_connection(stream: TcpStream) {
+    stream.shutdown(Shutdown::Both).unwrap();
+    log::info!("Disconnected from {}", stream.peer_addr().unwrap());
+}
+
+fn handle_connection(stream: TcpStream) -> () {
+    log::info!("Connected to {}", stream.peer_addr().unwrap());
+
+    let packet: SMDpacket = SMDpacket::receive_from(&stream).expect("Error receiving");
+
+    if !tcp::accept_smd_connect(&packet) {
+        log::warn!("From : {} | Received invalid CONNECT packet", stream.peer_addr().unwrap());
+    }
+    
+    drop_connection(stream);
+}
+
+fn main() {
+    init_logger();
+    init_hooks();
+
+    let args = Args::parse();
+    let sync_directory: PathBuf = to_valid_syncing_directory(args.sync_directory);
+    log::info!("Syncing directory {:?}", sync_directory);
 
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
     const PORT: u16 = 1234;
 
-    let server: TcpListener = match tcp::start_tcp_server(IP, PORT) {
-        Ok(server) => {
-            println!("Server listening on {IP}:{PORT}");
-            server
-        }
-        Err(e) => panic!("Error starting server : {{ {e} }}"),
-    };
+    let server: TcpListener = tcp::start_tcp_server(IP, PORT);
 
     for stream in server.incoming() {
         match stream {

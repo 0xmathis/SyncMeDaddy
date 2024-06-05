@@ -27,7 +27,7 @@ impl SMDpacket {
         }
     }
 
-    pub fn send_to(&self, mut stream: TcpStream) -> io::Result<()> {
+    pub fn send_to(&self, mut stream: &TcpStream) -> io::Result<()> {
         stream.write_all(&[self.version])?;
         stream.write_all(&[self.data_type.to_value()])?;
         stream.write_all(&self.data_length.to_be_bytes())?;
@@ -36,7 +36,7 @@ impl SMDpacket {
         Ok(())
     }
 
-    pub fn receive_from(mut stream: TcpStream) -> io::Result<SMDpacket> {
+    pub fn receive_from(mut stream: &TcpStream) -> io::Result<SMDpacket> {
         let mut version: [u8; 1] = [0; 1];
         let mut data_type: [u8; 1] = [0; 1];
         let mut data_length: [u8; 4] = [0; 4];
@@ -55,10 +55,18 @@ impl SMDpacket {
 
         Ok(Self::new(version, data_type, data))
     }
+
+    pub fn get_data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
+    pub fn get_type(&self) -> &SMDtype {
+        &self.data_type
+    }
 }
 
 impl Display for SMDpacket {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{{\n\tversion: {}\n\tdata_type: {}\n\tdata_length: {}\n\tdata: {:?}\n}}", self.version, self.data_type.to_value(), self.data_length, self.data)
+        write!(f, "{{ version: {} | type: {} | length: {} }}", self.version, self.data_type.to_value(), self.data_length)
     }
 }
