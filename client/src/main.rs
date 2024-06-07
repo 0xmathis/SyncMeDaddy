@@ -1,6 +1,6 @@
+use std::io::Result;
 use std::net::{
-    Ipv4Addr,
-    TcpStream,
+    Ipv4Addr, Shutdown, TcpStream
 };
 use std::panic;
 use env_logger:: {
@@ -11,6 +11,7 @@ use log;
 use clap::Parser;
 use path_absolutize::Absolutize;
 use smd_protocol::smd_type::SMDtype;
+use tcp::*;
 use std::path::{Path, PathBuf};
 
 use smd_protocol::smd_packet::SMDpacket;
@@ -43,7 +44,7 @@ fn init_hooks() {
     }));
 }
 
-fn main() {
+fn main() -> Result<()> {
     init_logger();
     init_hooks();
 
@@ -53,13 +54,16 @@ fn main() {
 
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
     const PORT: u16 = 1234;
+    const USERNAME: &str = "mathis";
 
     let stream: TcpStream = tcp::start_tcp_client(IP, PORT);
+    connect(&stream, USERNAME)?;
 
-    let packet: SMDpacket = SMDpacket::new(1, SMDtype::DISCONNECT, Vec::from("Hello"));
-    log::info!("To : {} | Sending : {}", stream.peer_addr().unwrap(), packet);
-    let _ = packet.send_to(&stream);
+    let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
-    let packet: SMDpacket = SMDpacket::receive_from(&stream).expect("Error receiving");
-    log::info!("From {} | Received {}", stream.peer_addr().unwrap(), packet);
+    if let SMDtype::Disconnect = packet.get_type() {
+        disconnect(stream)?;
+    }
+
+    Ok(())
 }

@@ -31,7 +31,7 @@ impl User {
 
     pub fn from_smd_packet(packet: SMDpacket) -> Option<Self> {
         match packet.get_type() {
-            SMDtype::CONNECT => {
+            SMDtype::Connect => {
                 let data: Vec<u8> = packet.get_data().clone();
 
                 if data.is_ascii() {

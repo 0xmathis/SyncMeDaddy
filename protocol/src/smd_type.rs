@@ -1,29 +1,31 @@
 pub enum SMDtype {
-    CONNECT,
-    DISCONNECT,
-    TO_UPLOAD,
-    TO_DOWNLOAD,
-    OTHER,
+    Connect,
+    Disconnect,
+    Updatequest,
+    Update,
+    ToUpload,
+    ToDownload,
+    Other,
 }
 
 impl SMDtype {
     pub fn to_value(&self) -> u8 {
         match *self {
-            Self::CONNECT => 1,
-            Self::DISCONNECT => 2,
-            Self::TO_UPLOAD => 3,
-            Self::TO_DOWNLOAD => 4,
+            Self::Connect => 1,
+            Self::Disconnect => 2,
+            Self::ToUpload => 3,
+            Self::ToDownload => 4,
             _ => 0,
         }
     }
 
     pub fn from_value(value: u8) -> Self {
         match value {
-            1 => Self::CONNECT,
-            2 => Self::DISCONNECT,
-            3 => Self::TO_UPLOAD,
-            4 => Self::TO_DOWNLOAD,
-            _ => Self::OTHER
+            1 => Self::Connect,
+            2 => Self::Disconnect,
+            3 => Self::ToUpload,
+            4 => Self::ToDownload,
+            _ => Self::Other
         }
     }
 }

@@ -6,6 +6,7 @@ use std::fmt::{
 use std::io::{self, Read};
 use std::io::Write;
 use std::net::TcpStream;
+use log;
 
 use crate::smd_type::SMDtype;
 
@@ -33,6 +34,7 @@ impl SMDpacket {
         stream.write_all(&self.data_length.to_be_bytes())?;
         stream.write_all(&self.data)?;
 
+        log::info!("To : {} | Sending : {}", stream.peer_addr()?, self);
         Ok(())
     }
 
@@ -52,8 +54,10 @@ impl SMDpacket {
         data.resize(data_length as usize, 0);
 
         stream.read_exact(&mut data)?;
+        let packet: Self = Self::new(version, data_type, data);
 
-        Ok(Self::new(version, data_type, data))
+        log::info!("From : {} | Received {}", stream.peer_addr()?, packet);
+        Ok(packet)
     }
 
     pub fn get_data(&self) -> &Vec<u8> {

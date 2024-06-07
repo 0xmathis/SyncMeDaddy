@@ -1,6 +1,7 @@
 use std::net::{
-    Ipv4Addr, Shutdown, TcpListener, TcpStream
+    Ipv4Addr, TcpListener
 };
+use std::io::Result;
 use std::panic;
 use env_logger:: {
     Builder,
@@ -8,11 +9,9 @@ use env_logger:: {
 };
 use log;
 use clap::Parser;
+use tcp::handle_connection;
 use utils::to_valid_syncing_directory;
 use std::path::PathBuf;
-
-use smd_protocol::smd_packet::SMDpacket;
-use smd_protocol::smd_type::SMDtype;
 
 mod tcp;
 mod user;
@@ -43,24 +42,7 @@ fn init_hooks() {
     }));
 }
 
-fn drop_connection(stream: TcpStream) {
-    stream.shutdown(Shutdown::Both).unwrap();
-    log::info!("Disconnected from {}", stream.peer_addr().unwrap());
-}
-
-fn handle_connection(stream: TcpStream) -> () {
-    log::info!("Connected to {}", stream.peer_addr().unwrap());
-
-    let packet: SMDpacket = SMDpacket::receive_from(&stream).expect("Error receiving");
-
-    if !tcp::accept_smd_connect(&packet) {
-        log::warn!("From : {} | Received invalid CONNECT packet", stream.peer_addr().unwrap());
-    }
-    
-    drop_connection(stream);
-}
-
-fn main() {
+fn main() -> Result<()> {
     init_logger();
     init_hooks();
 
@@ -76,9 +58,11 @@ fn main() {
     for stream in server.incoming() {
         match stream {
             Ok(s) => {
-                handle_connection(s);
+                handle_connection(s)?;
             }
             Err(e) => panic!("Encountered IO error: {e}"),
         }
     }
+
+    Ok(())
 }
