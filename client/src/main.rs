@@ -1,6 +1,6 @@
 use std::io::Result;
 use std::net::{
-    Ipv4Addr, Shutdown, TcpStream
+    Ipv4Addr, TcpStream
 };
 use std::panic;
 use env_logger:: {
@@ -12,11 +12,13 @@ use clap::Parser;
 use path_absolutize::Absolutize;
 use smd_protocol::smd_type::SMDtype;
 use tcp::*;
+use utils::to_valid_syncing_directory;
 use std::path::{Path, PathBuf};
 
 use smd_protocol::smd_packet::SMDpacket;
 
 mod tcp;
+mod utils;
 
 
 /// SMD Client
@@ -49,7 +51,7 @@ fn main() -> Result<()> {
     init_hooks();
 
     let args = Args::parse();
-    let sync_directory: PathBuf = Path::new(&args.sync_directory).absolutize().unwrap().to_path_buf();
+    let sync_directory: PathBuf = to_valid_syncing_directory(args.sync_directory)?;
     log::info!("Syncing directory {:?}", sync_directory);
 
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;

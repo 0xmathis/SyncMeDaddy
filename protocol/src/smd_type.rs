@@ -1,10 +1,11 @@
 pub enum SMDtype {
     Connect,
     Disconnect,
-    Updatequest,
+    UpdateRequest,
     Update,
-    ToUpload,
-    ToDownload,
+    Updated,
+    Upload,
+    Download,
     Other,
 }
 
@@ -13,8 +14,11 @@ impl SMDtype {
         match *self {
             Self::Connect => 1,
             Self::Disconnect => 2,
-            Self::ToUpload => 3,
-            Self::ToDownload => 4,
+            Self::UpdateRequest => 3,
+            Self::Update => 4,
+            Self::Updated => 5,
+            Self::Upload => 6,
+            Self::Download => 7,
             _ => 0,
         }
     }
@@ -23,8 +27,11 @@ impl SMDtype {
         match value {
             1 => Self::Connect,
             2 => Self::Disconnect,
-            3 => Self::ToUpload,
-            4 => Self::ToDownload,
+            3 => Self::UpdateRequest,
+            4 => Self::Update,
+            5 => Self::Updated,
+            6 => Self::Upload,
+            7 => Self::Download,
             _ => Self::Other
         }
     }

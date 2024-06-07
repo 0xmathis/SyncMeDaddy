@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     init_hooks();
 
     let args = Args::parse();
-    let sync_directory: PathBuf = to_valid_syncing_directory(args.sync_directory);
+    let sync_directory: PathBuf = to_valid_syncing_directory(args.sync_directory)?;
     log::info!("Syncing directory {:?}", sync_directory);
 
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
