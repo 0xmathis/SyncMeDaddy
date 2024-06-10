@@ -1,17 +1,10 @@
 [package]
-name = "sync_me_daddy"
+name = "utils"
 version = "0.1.0"
 edition = "2021"
 
-[workspace]
-members = [
-    "client",
-    "server",
-    "protocol",
-    "utils",
-]
-
 [dependencies]
+path-absolutize = "3.1.1"
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde = { version = "1.0.104", features = ["derive"] }
-utils = { path = "utils" }
+sha256 = "1.5.0"

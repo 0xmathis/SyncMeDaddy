@@ -9,16 +9,14 @@ use env_logger:: {
 };
 use log;
 use clap::Parser;
-use path_absolutize::Absolutize;
 use smd_protocol::smd_type::SMDtype;
 use tcp::*;
 use utils::to_valid_syncing_directory;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use smd_protocol::smd_packet::SMDpacket;
 
 mod tcp;
-mod utils;
 
 
 /// SMD Client

@@ -15,7 +15,6 @@ use std::path::PathBuf;
 
 mod tcp;
 mod user;
-mod utils;
 
 
 /// SMD Server
