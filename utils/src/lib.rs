@@ -21,8 +21,7 @@ pub fn to_valid_syncing_directory(sync_directory: String) -> Result<PathBuf> {
 
 pub fn get_current_state(sync_directory: PathBuf) -> Result<JSON> {
     let files: Vec<PathBuf> = tree_directory(sync_directory)?;
-    JSON::from_vec(files);
-    return Ok(JSON::empty());
+    return Ok(JSON::from_paths(files));
 }
 
 pub fn tree_directory(directory: PathBuf) -> Result<Vec<PathBuf>> {
@@ -48,6 +47,10 @@ pub fn time_since_epoch() -> u64 {
         Ok(n) => n.as_secs(),
         Err(_) => 0,
     }
+}
+
+pub fn last_modified(filepath: &PathBuf) -> Result<u64> {
+    Ok(filepath.metadata()?.modified()?.duration_since(UNIX_EPOCH).unwrap().as_secs())
 }
 
 pub fn sha256sum(filepath: PathBuf) -> Result<String> {

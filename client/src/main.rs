@@ -1,6 +1,7 @@
 use std::io::Result;
 use std::net::{
-    Ipv4Addr, TcpStream
+    Ipv4Addr,
+    TcpStream,
 };
 use std::panic;
 use env_logger:: {
@@ -58,6 +59,7 @@ fn main() -> Result<()> {
 
     let stream: TcpStream = tcp::start_tcp_client(IP, PORT);
     connect(&stream, USERNAME)?;
+    update_request(&stream, sync_directory)?;
 
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 

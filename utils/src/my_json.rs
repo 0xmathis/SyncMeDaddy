@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs};
 use std::io::{Read, Result};
 use std::path::PathBuf;
 
-use crate::sha256sum;
+use crate::last_modified;
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,7 +14,6 @@ pub struct JSON(HashMap<String, File>);
 pub struct File {
     filepath: String,
     last_update: u64,
-    sha256sum: String,
 }
 
 impl JSON {
@@ -22,29 +21,39 @@ impl JSON {
         serde_json::from_str("{}").unwrap()
     }
 
-    pub fn from_vec(files: Vec<PathBuf>) -> Self {
+    pub fn from_paths(paths: Vec<PathBuf>) -> Self {
         let mut output: HashMap<String, File> = HashMap::new();
-        println!("{}", files.len());
+        println!("{}", paths.len());
 
-        for filepath in files.iter() {
-            let file: File = File::new(filepath.clone(), 0, sha256sum(filepath.clone()).unwrap());
+        for filepath in paths.iter() {
+            if let Ok(last_modified) = last_modified(filepath) {
+                let file: File = File::new(filepath, last_modified);
 
-            output.insert(String::from(filepath.to_str().unwrap()), file);
+                output.insert(String::from(filepath.to_str().unwrap()), file);
+            }
         }
 
         JSON(output)
     }
 
-    pub fn load_from_file(filepath: PathBuf) -> Result<Self> {
-        if !filepath.exists() {
+    pub fn from_str(data: &String) -> Self {
+        serde_json::from_str(data).unwrap()
+    }
+
+    pub fn from_vec(data: &Vec<u8>) -> Self {
+        serde_json::from_slice(data).unwrap()
+    }
+
+    pub fn load_from_file(filepath: &PathBuf) -> Result<Self> {
+        if !filepath.exists() || !filepath.is_file() {
             return Ok(Self::empty());
         }
 
-        let mut file = fs::File::open(filepath)?;
-        let mut data = String::new();
+        let mut file: fs::File = fs::File::open(filepath)?;
+        let mut data: String = String::new();
         file.read_to_string(&mut data)?;
 
-        let json: Self = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        let json: Self = Self::from_str(&data);
 
         Ok(json)
     }
@@ -55,11 +64,10 @@ impl JSON {
 }
 
 impl File {
-    pub fn new(filepath: PathBuf, last_update: u64, sha256sum: String) -> Self {
+    pub fn new(filepath: &PathBuf, last_update: u64) -> Self {
         Self {
             filepath: filepath.to_str().unwrap().to_string(),
             last_update,
-            sha256sum,
         }
     }
 }

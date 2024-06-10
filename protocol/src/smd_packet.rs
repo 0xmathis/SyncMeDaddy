@@ -3,7 +3,10 @@ use std::fmt::{
     Formatter,
     Result,
 };
-use std::io::{self, Read};
+use std::io::{
+    self,
+    Read
+};
 use std::io::Write;
 use std::net::TcpStream;
 use log;

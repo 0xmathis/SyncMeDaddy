@@ -1,9 +1,24 @@
 use std::net::{
-    Ipv4Addr, Shutdown, SocketAddr, TcpStream
+    Ipv4Addr,
+    Shutdown,
+    SocketAddr,
+    TcpStream,
 };
-use std::io::{Error, ErrorKind, Result};
+use std::io::{
+    Error,
+    ErrorKind,
+    Result
+};
+use std::path::PathBuf;
+use serde_json::{
+    json,
+    Value
+};
 
-use smd_protocol::{smd_packet::SMDpacket, smd_type::SMDtype};
+use smd_protocol::smd_packet::SMDpacket;
+use smd_protocol::smd_type::SMDtype;
+use utils::get_current_state;
+use utils::my_json::JSON;
 
 
 pub fn start_tcp_client(ip: Ipv4Addr, port: u16) -> TcpStream {
@@ -33,6 +48,26 @@ pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
             } else {
                 return Err(Error::new(ErrorKind::InvalidData, "Invalid data"));
             }
+        },
+        _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown packet received")),
+    }
+}
+
+pub fn update_request(stream: &TcpStream, sync_directory: PathBuf) -> Result<JSON> {
+    let current_state: Value = json!(get_current_state(sync_directory).unwrap());
+    let data: Vec<u8> = Vec::from(current_state.to_string());
+
+    let packet: SMDpacket = SMDpacket::new(1, SMDtype::UpdateRequest, data);
+    packet.send_to(&stream)?;
+
+    let response: SMDpacket = SMDpacket::receive_from(&stream)?;
+
+    match response.get_type() {
+        SMDtype::Update => {
+            let data: &Vec<u8> = response.get_data();
+            let json: JSON = JSON::from_vec(data);
+
+            return Ok(json);
         },
         _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown packet received")),
     }

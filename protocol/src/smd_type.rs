@@ -1,12 +1,12 @@
 pub enum SMDtype {
-    Connect,
-    Disconnect,
-    UpdateRequest,
-    Update,
-    Updated,
-    Upload,
-    Download,
-    Other,
+    Connect, // From both
+    Disconnect, // From server
+    UpdateRequest, // From client
+    Update, // From server
+    Updated, // From server
+    Upload, // Client
+    Download, // From client
+    Other, // From both
 }
 
 impl SMDtype {
