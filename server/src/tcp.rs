@@ -4,6 +4,7 @@ use std::net::{
 use std::io::{Error, ErrorKind, Result};
 
 use smd_protocol::{smd_packet::SMDpacket, smd_type::SMDtype};
+use utils::my_json::JSON;
 
 
 pub fn start_tcp_server(ip: Ipv4Addr, port: u16) -> TcpListener {
@@ -58,6 +59,13 @@ pub fn connect(stream: &TcpStream) -> Result<()> {
     log::warn!("From : {} | Received invalid Connect packet", stream.peer_addr()?);
     SMDpacket::new(1, SMDtype::Connect, Vec::from("KO")).send_to(&stream)?;
     Err(Error::new(ErrorKind::ConnectionRefused, "Connection refused"))
+}
+
+pub fn update(stream: &TcpStream) -> Result<()> {
+    let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
+    let data: JSON = JSON::from_vec(packet.get_data());
+
+    Ok(())
 }
 
 pub fn disconnect(stream: TcpStream) -> Result<()> {
