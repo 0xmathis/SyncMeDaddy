@@ -12,6 +12,7 @@ use log;
 use clap::Parser;
 use smd_protocol::smd_type::SMDtype;
 use tcp::*;
+use utils::my_json::JSON;
 use utils::to_valid_syncing_directory;
 use std::path::PathBuf;
 
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
 
     let stream: TcpStream = tcp::start_tcp_client(IP, PORT);
     connect(&stream, USERNAME)?;
-    update_request(&stream, sync_directory)?;
+    update_request(&stream, &sync_directory)?;
 
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 

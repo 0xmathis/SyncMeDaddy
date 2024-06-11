@@ -53,9 +53,10 @@ pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
     }
 }
 
-pub fn update_request(stream: &TcpStream, sync_directory: PathBuf) -> Result<JSON> {
-    let current_state: Value = json!(get_current_state(sync_directory).unwrap());
-    let data: Vec<u8> = Vec::from(current_state.to_string());
+pub fn update_request(stream: &TcpStream, sync_directory: &PathBuf) -> Result<JSON> {
+    let stored_state: JSON = JSON::load_from_file(&sync_directory.join(".smd_state"))?;
+    let current_state: JSON = get_current_state(sync_directory).unwrap();
+    let data: Vec<u8> = Vec::from(json!(current_state).to_string());
 
     let packet: SMDpacket = SMDpacket::new(1, SMDtype::UpdateRequest, data);
     packet.send_to(&stream)?;

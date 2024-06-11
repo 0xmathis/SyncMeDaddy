@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::io::Result;
 
 use smd_protocol::smd_packet::SMDpacket;
-use smd_protocol::smd_type::SMDtype;
 
 
 pub struct User {
     username: String,
+    sync_directory: PathBuf,
 }
 
 impl User {
@@ -21,35 +20,36 @@ impl User {
         false
     }
 
-    pub fn new(username: String) -> Option<Self> {
+    pub fn new(username: String, root_directory: &PathBuf) -> Option<Self> {
         if !Self::check_username(&username) {
             return None;
         }
 
-        Some(Self { username })
+        let sync_directory: PathBuf = Self::build_sync_directory(root_directory, &username);
+        let user: Self = Self { username, sync_directory };
+        user.init_sync_directory();
+
+        Some(user)
     }
 
-    pub fn from_smd_packet(packet: SMDpacket) -> Option<Self> {
-        match packet.get_type() {
-            SMDtype::Connect => {
-                let data: Vec<u8> = packet.get_data().clone();
+    pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Self {
+        let data: Vec<u8> = packet.get_data().clone();
+        return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap()
+    }
 
-                if data.is_ascii() {
-                    return Self::new(String::from_utf8(data).unwrap())
-                }
-            }
-            _ => return None,
+    fn init_sync_directory(&self) -> () {
+        let sync_directory: &PathBuf = self.get_sync_directory();
+
+        if !sync_directory.exists() {
+            let _ = fs::create_dir(sync_directory);
         }
-
-        None
     }
 
-    fn init_sync_directory(&self, sync_directory: PathBuf) -> Result<()> {
-        let sync_directory: PathBuf = self.get_sync_directory(sync_directory);
-        fs::create_dir(sync_directory)
+    pub fn get_sync_directory(&self) -> &PathBuf {
+        &self.sync_directory
     }
 
-    pub fn get_sync_directory(&self, sync_directory: PathBuf) -> PathBuf {
-        return sync_directory.join(&self.username);
+    pub fn build_sync_directory(root_directory: &PathBuf, username: &String) -> PathBuf {
+        root_directory.join(username)
     }
 }

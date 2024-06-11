@@ -1,39 +1,81 @@
 use serde_json;
 use serde::{Serialize, Deserialize};
+use std::collections::HashSet;
 use std::{collections::HashMap, fs};
 use std::io::{Read, Result};
 use std::path::PathBuf;
 
-use crate::last_modified;
+use crate::{last_modified, to_absolute_path};
 
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateAnswer {
+    to_upload: JSON,
+    to_download: JSON,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JSON(HashMap<String, File>);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
-    filepath: String,
+    filepath: PathBuf,
     last_update: u64,
+    state: Option<FileState>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum FileState {
+    Edited,
+    Deleted,
+    Stored,
 }
 
 impl JSON {
+    pub fn diff(self, other: Self) -> Self {
+        let self_data = self.get_data();
+        let other_data = other.get_data().to_owned();
+        let mut files: HashSet<&String> = HashSet::new();
+        files.extend(self_data.keys());
+        files.extend(other_data.keys());
+        let mut output: HashMap<String, File> = HashMap::new();
+        
+        for filepath in files {
+            let self_contains: bool = self_data.contains_key(filepath);
+            let other_contains: bool = other_data.contains_key(filepath);
+
+            if self_contains && other_contains {
+            } else if self_contains {
+            } else if other_contains {
+                let mut file: File = other_data.get(filepath).unwrap().to_owned();
+                file.set_state(FileState::Edited);
+            }
+        }
+
+        Self::empty()
+    }
+
     pub fn empty() -> Self {
         serde_json::from_str("{}").unwrap()
     }
 
-    pub fn from_paths(paths: Vec<PathBuf>) -> Self {
-        let mut output: HashMap<String, File> = HashMap::new();
-        println!("{}", paths.len());
+    pub fn from_map(map: HashMap<String, File>) -> Self {
+        Self(map)
+    }
 
-        for filepath in paths.iter() {
+    pub fn from_paths(paths: Vec<PathBuf>, root_directory: &PathBuf) -> Self {
+        let mut output: HashMap<String, File> = HashMap::new();
+
+        for filepath in paths.iter() { 
             if let Ok(last_modified) = last_modified(filepath) {
-                let file: File = File::new(filepath, last_modified);
+                let filepath: PathBuf = to_absolute_path(filepath).strip_prefix(&root_directory).unwrap().to_path_buf();
+                let file: File = File::new(&filepath, last_modified);
 
                 output.insert(String::from(filepath.to_str().unwrap()), file);
             }
         }
 
-        JSON(output)
+        Self::from_map(output)
     }
 
     pub fn from_str(data: &String) -> Self {
@@ -66,8 +108,17 @@ impl JSON {
 impl File {
     pub fn new(filepath: &PathBuf, last_update: u64) -> Self {
         Self {
-            filepath: filepath.to_str().unwrap().to_string(),
+            filepath: filepath.to_owned(),
             last_update,
+            state: None,
         }
+    }
+
+    pub fn set_state(&mut self, state: FileState) -> () {
+        self.state = Some(state);
+    }
+
+    pub fn del_state(&mut self) -> () {
+        self.state = None;
     }
 }

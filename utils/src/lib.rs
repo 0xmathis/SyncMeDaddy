@@ -1,16 +1,16 @@
 use std::fs::{read_dir, ReadDir};
 use std::io::Result;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::str::FromStr;
 use my_json::JSON;
 use path_absolutize::Absolutize;
 use std::time::{SystemTime, UNIX_EPOCH};
-use sha256::try_digest;
 
 pub mod my_json;
 
 
 pub fn to_valid_syncing_directory(sync_directory: String) -> Result<PathBuf> {
-    let sync_directory: PathBuf = Path::new(&sync_directory).absolutize()?.to_path_buf();
+    let sync_directory: PathBuf = to_absolute_path(&PathBuf::from_str(&sync_directory).unwrap());
 
     if !sync_directory.is_dir() {
         panic!("Path provided ({}) is invalid", sync_directory.to_str().unwrap());
@@ -19,12 +19,21 @@ pub fn to_valid_syncing_directory(sync_directory: String) -> Result<PathBuf> {
     Ok(sync_directory)
 }
 
-pub fn get_current_state(sync_directory: PathBuf) -> Result<JSON> {
-    let files: Vec<PathBuf> = tree_directory(sync_directory)?;
-    return Ok(JSON::from_paths(files));
+pub fn to_absolute_path(path: &PathBuf) -> PathBuf {
+    path.absolutize().unwrap().to_path_buf()
 }
 
-pub fn tree_directory(directory: PathBuf) -> Result<Vec<PathBuf>> {
+pub fn get_current_state(root_directory: &PathBuf) -> Result<JSON> {
+    let mut files: Vec<PathBuf> = tree_directory(root_directory)?;
+    
+    if let Ok(index) = files.binary_search(&root_directory.join(".smd_state")) {
+        files.remove(index);
+    }
+
+    return Ok(JSON::from_paths(files, root_directory));
+}
+
+pub fn tree_directory(directory: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut output: Vec<PathBuf> = Vec::new();
 
     let paths: ReadDir = read_dir(directory)?;
@@ -35,7 +44,7 @@ pub fn tree_directory(directory: PathBuf) -> Result<Vec<PathBuf>> {
         if path.is_file() {
             output.push(path);
         } else if path.is_dir() {
-            output.append(&mut tree_directory(path)?);
+            output.append(&mut tree_directory(&path)?);
         }
     }
 
@@ -51,8 +60,4 @@ pub fn time_since_epoch() -> u64 {
 
 pub fn last_modified(filepath: &PathBuf) -> Result<u64> {
     Ok(filepath.metadata()?.modified()?.duration_since(UNIX_EPOCH).unwrap().as_secs())
-}
-
-pub fn sha256sum(filepath: PathBuf) -> Result<String> {
-    try_digest(filepath)
 }
