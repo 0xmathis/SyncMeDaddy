@@ -1,82 +1,86 @@
-use serde_json;
 use serde::{Serialize, Deserialize};
+use serde_json;
+use std::collections::HashMap;
 use std::collections::HashSet;
-use std::{collections::HashMap, fs};
-use std::io::{Read, Result};
+use std::fs;
+use std::io::Write;
+use std::io::{self, Read, Result};
+use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
+use sha1::{Sha1, Digest};
 
-use crate::{last_modified, to_absolute_path};
+use crate::to_absolute_path;
 
+
+// #[derive(Debug, Serialize, Deserialize)]
+// pub struct UpdateAnswer {
+//     to_upload: JSON,
+//     to_download: JSON,
+// }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateAnswer {
-    to_upload: JSON,
-    to_download: JSON,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JSON(HashMap<String, File>);
+pub struct JSON(HashMap<PathBuf, File>);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
-    filepath: PathBuf,
-    last_update: u64,
-    state: Option<FileState>,
+    mtime: i64,
+    size: u64,
+    sha1: [u8; 20],
+    state: FileState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FileState {
+    Unchanged,
+    Created,
     Edited,
     Deleted,
-    Stored,
 }
 
 impl JSON {
-    pub fn diff(self, other: Self) -> Self {
-        let self_data = self.get_data();
-        let other_data = other.get_data().to_owned();
-        let mut files: HashSet<&String> = HashSet::new();
-        files.extend(self_data.keys());
-        files.extend(other_data.keys());
-        let mut output: HashMap<String, File> = HashMap::new();
+    // pub fn diff(self, other: Self) -> Self {
+    //     let self_data = self.get_data();
+    //     let other_data = other.get_data().to_owned();
+    //     let mut files: HashSet<&String> = HashSet::new();
+    //     files.extend(self_data.keys());
+    //     files.extend(other_data.keys());
+    //     let mut output: HashMap<String, File> = HashMap::new();
         
-        for filepath in files {
-            let self_contains: bool = self_data.contains_key(filepath);
-            let other_contains: bool = other_data.contains_key(filepath);
+    //     for filepath in files {
+    //         let self_contains: bool = self_data.contains_key(filepath);
+    //         let other_contains: bool = other_data.contains_key(filepath);
 
-            if self_contains && other_contains {
-            } else if self_contains {
-            } else if other_contains {
-                let mut file: File = other_data.get(filepath).unwrap().to_owned();
-                file.set_state(FileState::Edited);
-            }
-        }
+    //         if self_contains && other_contains {
+    //         } else if self_contains {
+    //         } else if other_contains {
+    //             let mut file: File = other_data.get(filepath).unwrap().to_owned();
+    //             file.set_state(FileState::Edited);
+    //         }
+    //     }
 
-        Self::empty()
-    }
+    //     Self::empty()
+    // }
 
     pub fn empty() -> Self {
         serde_json::from_str("{}").unwrap()
     }
 
-    pub fn from_map(map: HashMap<String, File>) -> Self {
+    pub fn from_map(map: HashMap<PathBuf, File>) -> Self {
         Self(map)
     }
 
-    pub fn from_paths(paths: Vec<PathBuf>, root_directory: &PathBuf) -> Self {
-        let mut output: HashMap<String, File> = HashMap::new();
+    // pub fn from_paths(paths: Vec<PathBuf>, root_directory: &PathBuf) -> Self {
+    //     let mut output: HashMap<PathBuf, File> = HashMap::new();
 
-        for filepath in paths.iter() { 
-            if let Ok(last_modified) = last_modified(filepath) {
-                let filepath: PathBuf = to_absolute_path(filepath).strip_prefix(&root_directory).unwrap().to_path_buf();
-                let file: File = File::new(&filepath, last_modified);
+    //     for filepath in paths.iter() { 
+    //         let file: File = File::new(&filepath, 0);
+    //         let filepath_stripped: PathBuf = to_absolute_path(filepath).strip_prefix(&root_directory).unwrap().to_path_buf();
 
-                output.insert(String::from(filepath.to_str().unwrap()), file);
-            }
-        }
+    //         output.insert(filepath_stripped, file);
+    //     }
 
-        Self::from_map(output)
-    }
+    //     Self(output)
+    // }
 
     pub fn from_str(data: &String) -> Self {
         serde_json::from_str(data).unwrap()
@@ -100,25 +104,55 @@ impl JSON {
         Ok(json)
     }
 
-    pub fn get_data(&self) -> &HashMap<String, File> {
+    pub fn store_to_file(&self, filepath: &PathBuf) -> Result<()> {
+        let json_string = serde_json::to_string(self).unwrap();
+        let mut file = fs::File::create(filepath).unwrap();
+
+        file.write_all(json_string.as_bytes())
+    }
+
+    pub fn get_mut_data(&mut self) -> &mut HashMap<PathBuf, File> {
+        &mut self.0
+    }
+
+    pub fn get_data(&self) -> &HashMap<PathBuf, File> {
         &self.0
     }
 }
 
 impl File {
-    pub fn new(filepath: &PathBuf, last_update: u64) -> Self {
+    pub fn new(filepath: &PathBuf, state: FileState) -> Self {
+        let metadata: fs::Metadata = fs::metadata(filepath).unwrap();
+
+        let mtime: i64 = metadata.st_mtime();
+        let size: u64 = metadata.st_size();
+
+        let mut file: fs::File = fs::File::open(&filepath).unwrap();
+        let mut hasher: Sha1 = Sha1::new();
+        io::copy(&mut file, &mut hasher).unwrap();
+        let sha1: [u8; 20] = hasher.finalize().into();
+
         Self {
-            filepath: filepath.to_owned(),
-            last_update,
-            state: None,
+            mtime,
+            size,
+            sha1,
+            state,
         }
     }
 
-    pub fn set_state(&mut self, state: FileState) -> () {
-        self.state = Some(state);
+    pub fn get_mtime(&self) -> i64 {
+        self.mtime
     }
 
-    pub fn del_state(&mut self) -> () {
-        self.state = None;
+   pub fn get_size(&self) -> u64 {
+        self.size
+    }
+
+   pub fn get_sha1(&self) -> &[u8; 20] {
+        &self.sha1
+    }
+
+    pub fn set_state(&mut self, state: FileState) -> () {
+        self.state = state;
     }
 }

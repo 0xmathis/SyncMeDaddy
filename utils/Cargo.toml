@@ -7,3 +7,4 @@ edition = "2021"
 path-absolutize = "3.1.1"
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde = { version = "1.0.104", features = ["derive"] }
+sha-1 = "0.10.1"
