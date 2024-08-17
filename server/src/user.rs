@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 
 use smd_protocol::smd_packet::SMDpacket;
+use utils::my_json::Files;
 
 
 pub struct User {
@@ -47,6 +48,11 @@ impl User {
 
     pub fn get_sync_directory(&self) -> &PathBuf {
         &self.sync_directory
+    }
+
+    pub fn get_state(&self) -> Files {
+        let state: PathBuf = self.get_sync_directory().join("smd_state.json");
+        Files::load_from_file(&state).unwrap()
     }
 
     pub fn build_sync_directory(root_directory: &PathBuf, username: &String) -> PathBuf {

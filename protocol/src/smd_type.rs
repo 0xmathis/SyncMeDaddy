@@ -3,9 +3,9 @@ pub enum SMDtype {
     Disconnect, // From server
     UpdateRequest, // From client
     Update, // From server
-    Updated, // From server
-    Upload, // Client
-    Download, // From client
+    Upload, // From client
+    Download, // From server
+    Updated, // From both
     Other, // From both
 }
 

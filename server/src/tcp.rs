@@ -6,8 +6,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::path::PathBuf;
 
 use smd_protocol::{smd_packet::SMDpacket, smd_type::SMDtype};
-use utils::get_current_state;
-use utils::my_json::{File, JSON};
+use utils::my_json::{File, Files, UpdateAnswer};
 
 use crate::user::User;
 
@@ -36,21 +35,18 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
     log::info!("Connected to {}", stream.peer_addr().unwrap());
 
     let user: User = connect(&stream, root_directory)?;
-    update(&stream, &user)?;
+    update(&stream, user)?;
 
     // loop {
     //     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
     //     match packet.get_type() {
     //         SMDtype::Disconnect => break,
-    //         SMDtype::UpdateRequest => {}
-    //         SMDtype::Update => {}
-    //         SMDtype::Updated => {}
     //         SMDtype::Upload => {}
-    //         SMDtype::Download => {}
+    //         SMDtype::Updated => break,
     //         _ => {}
-    //     }
-    // }
+    //     };
+    // };
 
     disconnect(stream)
 }
@@ -69,46 +65,58 @@ pub fn connect(stream: &TcpStream, root_directory: &PathBuf) -> Result<User> {
     Err(Error::new(ErrorKind::ConnectionRefused, "Connection refused"))
 }
 
-pub fn update(stream: &TcpStream, user: &User) -> Result<(JSON, JSON)> {
+pub fn update(stream: &TcpStream, user: User) -> Result<()> {
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
-    let client_data: JSON = JSON::from_vec(packet.get_data());
+    let client_state: Files = Files::from_vec(packet.get_data());
     let sync_directory: &PathBuf = user.get_sync_directory();
-    println!("{:?}", client_data);
 
-    let data: JSON = get_current_state(sync_directory)?;
-    println!("{:?}", data);
+    let stored_state: Files = user.get_state();
+    println!("Client : {client_state:?}");
+    println!("Server : {stored_state:?}");
 
-    let (to_upload, to_download): (JSON, JSON) = state_diff(data, client_data);
+    let (to_upload, to_download): (Files, Files) = state_diff(stored_state, client_state);
+    let update_answer: UpdateAnswer = UpdateAnswer::from_json(to_upload, to_download);
 
-    Ok((to_upload, to_download))
+    SMDpacket::new(1, SMDtype::Update, update_answer.to_vec()).send_to(&stream)?;
+
+    Ok(())
 }
 
-fn state_diff(server_data: JSON, client_data: JSON) -> (JSON, JSON) {
-    let mut to_upload: HashMap<String, File> = HashMap::new();
-    let mut to_download: HashMap<String, File> = HashMap::new();
-    let server_data: &HashMap<String, File> = server_data.get_data();
-    let client_data: &HashMap<String, File> = client_data.get_data();
+fn state_diff(server_data: Files, client_data: Files) -> (Files, Files) {
+    let mut to_upload: HashMap<PathBuf, File> = HashMap::new();
+    let mut to_download: HashMap<PathBuf, File> = HashMap::new();
+    let server_data: HashMap<PathBuf, File> = server_data.get_data();
+    let client_data: HashMap<PathBuf, File> = client_data.get_data();
 
-    let mut files: HashSet<&String> = HashSet::new();
-    files.extend(server_data.keys());
-    files.extend(client_data.keys());
+    let mut filenames: HashSet<&PathBuf> = HashSet::new();
+    filenames.extend(server_data.keys());
+    filenames.extend(client_data.keys());
 
-    for file in files {
-        println!("{}", file);
-        let server_contains: bool = server_data.contains_key(file);
-        let client_contains: bool = client_data.contains_key(file);
+    for filename in filenames {
+        println!("{:?}", filename);
+        let server_contains: bool = server_data.contains_key(filename);
+        let client_contains: bool = client_data.contains_key(filename);
 
         if server_contains && client_contains {
             // TODO
-        } else if server_contains {
-            to_upload.insert(file.to_string(), server_data.get(file).unwrap().to_owned());
-        } else if client_contains {
-            to_download.insert(file.to_string(), client_data.get(file).unwrap().to_owned());
+            let server_file: File = server_data.get(filename).unwrap().to_owned();
+            let client_file: File = client_data.get(filename).unwrap().to_owned();
+
+            if server_file.get_hash() != client_file.get_hash() {
+                if server_file.get_mtime() < client_file.get_mtime() {
+                } else {
+                }
+            }
+        } else if server_contains && !client_contains {
+            let file: File = server_data.get(filename).unwrap().to_owned();
+            to_upload.insert(filename.clone(), file);
+        } else if client_contains && !server_contains {
+            let file: File = client_data.get(filename).unwrap().to_owned();
+            to_download.insert(filename.clone(), file);
         }
-        
     }
 
-    (JSON::from_map(to_upload), JSON::from_map(to_download))
+    (Files::from_map(to_upload), Files::from_map(to_download))
 }
 
 pub fn disconnect(stream: TcpStream) -> Result<()> {

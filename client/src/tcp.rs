@@ -9,16 +9,10 @@ use std::io::{
     ErrorKind,
     Result
 };
-use std::path::PathBuf;
-use serde_json::{
-    json,
-    Value
-};
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
-use utils::get_current_state;
-use utils::my_json::JSON;
+use utils::my_json::{Files, UpdateAnswer};
 
 
 pub fn start_tcp_client(ip: Ipv4Addr, port: u16) -> TcpStream {
@@ -50,13 +44,11 @@ pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
             }
         },
         _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown packet received")),
-    }
+    };
 }
 
-pub fn update_request(stream: &TcpStream, sync_directory: &PathBuf) -> Result<JSON> {
-    let stored_state: JSON = JSON::load_from_file(&sync_directory.join(".smd_state"))?;
-    let current_state: JSON = get_current_state(sync_directory).unwrap();
-    let data: Vec<u8> = Vec::from(json!(current_state).to_string());
+pub fn update_request(stream: &TcpStream, current_state: Files) -> Result<UpdateAnswer> {
+    let data: Vec<u8> = current_state.to_vec();
 
     let packet: SMDpacket = SMDpacket::new(1, SMDtype::UpdateRequest, data);
     packet.send_to(&stream)?;
@@ -66,12 +58,12 @@ pub fn update_request(stream: &TcpStream, sync_directory: &PathBuf) -> Result<JS
     match response.get_type() {
         SMDtype::Update => {
             let data: &Vec<u8> = response.get_data();
-            let json: JSON = JSON::from_vec(data);
+            let json: UpdateAnswer = UpdateAnswer::from_vec(data);
 
-            return Ok(json);
+            return Ok(json)
         },
         _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown packet received")),
-    }
+    };
 }
 
 pub fn disconnect(stream: TcpStream) -> Result<()> {

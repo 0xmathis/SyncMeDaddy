@@ -56,8 +56,8 @@ fn main() -> Result<()> {
 
     for stream in server.incoming() {
         match stream {
-            Ok(s) => {
-                handle_connection(s, &root_directory)?;
+            Ok(stream) => {
+                handle_connection(stream, &root_directory)?;
             }
             Err(e) => panic!("Encountered IO error: {e}"),
         }
