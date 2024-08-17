@@ -30,15 +30,13 @@ stateDiagram-v2
     s1 : Create file
     s2 : Delete file
     s3 : File Edited
-    s4 : File Unchanged
-    s5 : Nothing
-    s6 : Download new version of the file
+    s4 : Nothing
+    s5 : Download new version of the file
 
     [*] --> s1 : State Created
     [*] --> s2 : State Deleted
     [*] --> s3 : State Edited
     [*] --> s4 : State Unchanged
-    s3  --> s5 : Same SHA256
-    s3  --> s6 : Different SHA256
-    s4  --> s5
+    s3  --> s4 : Same hash
+    s3  --> s5 : Different hash
 ```

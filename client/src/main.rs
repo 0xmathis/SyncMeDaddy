@@ -66,6 +66,11 @@ fn main() -> Result<()> {
     let stream: TcpStream = tcp::start_tcp_client(IP, PORT);
     connect(&stream, USERNAME)?;
     let remote_diffs: UpdateAnswer = update_request(&stream, current_state)?;
+    println!("Remote diffs : {remote_diffs:?}");
+    let (to_upload, to_download): (Files, Files) = remote_diffs.get_data();
+
+    upload(&stream, &storage, to_upload)?;
+    download(&stream, &storage, to_download)?;
 
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 

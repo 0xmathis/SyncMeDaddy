@@ -1,3 +1,6 @@
+use std::fs;
+use std::io::Read;
+use std::collections::HashMap;
 use std::net::{
     Ipv4Addr,
     Shutdown,
@@ -9,10 +12,11 @@ use std::io::{
     ErrorKind,
     Result
 };
+use std::path::PathBuf;
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
-use utils::my_json::{Files, UpdateAnswer};
+use utils::my_json::{DataTransfer, File, Files, UpdateAnswer};
 
 
 pub fn start_tcp_client(ip: Ipv4Addr, port: u16) -> TcpStream {
@@ -64,6 +68,27 @@ pub fn update_request(stream: &TcpStream, current_state: Files) -> Result<Update
         },
         _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown packet received")),
     };
+}
+
+pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files) -> Result<()> {
+    let files: HashMap<PathBuf, File> = to_upload.get_data();
+
+    for (filename, file) in files.iter() {
+        let filepath: PathBuf = storage_directory.join(storage_directory);
+
+        let mut buffer: Vec<u8> = Vec::with_capacity(file.get_size() as usize);
+        let mut file_reader: fs::File = fs::File::open(filepath)?;
+        file_reader.read_exact(&mut buffer)?;
+
+        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
+        SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
+    }
+
+    Ok(())
+}
+
+pub fn download(stream: &TcpStream, storage_directory: &PathBuf, to_download: Files) -> Result<()> {
+    Ok(())
 }
 
 pub fn disconnect(stream: TcpStream) -> Result<()> {

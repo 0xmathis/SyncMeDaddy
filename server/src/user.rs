@@ -26,7 +26,7 @@ impl User {
             return None;
         }
 
-        let sync_directory: PathBuf = Self::build_sync_directory(root_directory, &username);
+        let sync_directory: PathBuf = root_directory.join(&username);
         let user: Self = Self { username, sync_directory };
         user.init_sync_directory();
 
@@ -35,14 +35,19 @@ impl User {
 
     pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Self {
         let data: Vec<u8> = packet.get_data().clone();
-        return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap()
+        return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap();
     }
 
     fn init_sync_directory(&self) -> () {
         let sync_directory: &PathBuf = self.get_sync_directory();
+        let storage_directory: PathBuf = sync_directory.join(String::from("storage"));
 
         if !sync_directory.exists() {
             let _ = fs::create_dir(sync_directory);
+        }
+
+        if !storage_directory.exists() {
+            let _ = fs::create_dir(storage_directory);
         }
     }
 
@@ -53,9 +58,5 @@ impl User {
     pub fn get_state(&self) -> Files {
         let state: PathBuf = self.get_sync_directory().join("smd_state.json");
         Files::load_from_file(&state).unwrap()
-    }
-
-    pub fn build_sync_directory(root_directory: &PathBuf, username: &String) -> PathBuf {
-        root_directory.join(username)
     }
 }

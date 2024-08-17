@@ -60,7 +60,7 @@ pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Re
         }
 
         let absolute_path: PathBuf = storage_directory.join(filepath);
-        let file: File = File::new(&absolute_path, FileState::Created);
+        let file: File = File::new(absolute_path, FileState::Created);
         output.insert(filepath.to_path_buf(), file);
     }
 

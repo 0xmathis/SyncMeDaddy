@@ -3,9 +3,8 @@ use std::net::{
 };
 use std::io::Result;
 use std::panic;
-use env_logger:: {
-    Builder,
-    Target,
+use env_logger::{
+    Builder, Target,
 };
 use log;
 use clap::Parser;

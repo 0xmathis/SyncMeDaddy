@@ -10,20 +10,27 @@ use std::path::PathBuf;
 use sha1::{Sha1, Digest};
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateAnswer {
     to_upload: Files,
     to_download: Files,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataTransfer {
+    filename: PathBuf,
+    file: File,
+    data: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Files(HashMap<PathBuf, File>);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
     mtime: i64,
     size: u64,
-    hash: Option<[u8; 20]>,
+    hash: [u8; 20],
     state: FileState,
 }
 
@@ -33,6 +40,45 @@ pub enum FileState {
     Created,
     Edited,
     Deleted,
+}
+
+impl DataTransfer {
+    pub fn new(filename: PathBuf, file: File, data: Vec<u8>) -> Self {
+        Self {
+            filename,
+            file,
+            data,
+        }
+    }
+
+    pub fn from_vec(data: &Vec<u8>) -> Self {
+        serde_json::from_slice(data).unwrap()
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        Vec::from(json!(self).to_string())
+    }
+
+    pub fn get_filename(&self) -> &PathBuf {
+        &self.filename
+    }
+
+    pub fn get_file(&self) -> &File {
+        &self.file
+    }
+
+    pub fn get_data(&self) -> &Vec<u8> {
+        &self.data
+    }
+
+    pub fn store(self, root_directory: &PathBuf) -> Result<()> {
+        let filepath: PathBuf = self.get_filename().join(root_directory);
+        let mut file_writer = fs::File::create(filepath)?;
+        file_writer.write_all(self.get_data())?;
+        file_writer.sync_all()?;
+
+        Ok(())
+    }
 }
 
 impl UpdateAnswer {
@@ -49,6 +95,10 @@ impl UpdateAnswer {
 
     pub fn to_vec(&self) -> Vec<u8> {
         Vec::from(json!(self).to_string())
+    }
+
+    pub fn get_data(self) -> (Files, Files) {
+        (self.to_upload, self.to_download)
     }
 }
 
@@ -100,18 +150,18 @@ impl Files {
 }
 
 impl File {
-    pub fn new(filepath: &PathBuf, state: FileState) -> Self {
-        let metadata: fs::Metadata = fs::metadata(filepath).unwrap();
+    pub fn new(filepath: PathBuf, state: FileState) -> Self {
+        let metadata: fs::Metadata = fs::metadata(&filepath).unwrap();
 
         let mtime: i64 = metadata.st_mtime();
         let size: u64 = metadata.st_size();
 
-        let hash: [u8; 20] = Self::hash(filepath);
+        let hash: [u8; 20] = Self::hash(&filepath);
 
         Self {
             mtime,
             size,
-            hash: Some(hash),
+            hash,
             state,
         }
     }
@@ -131,8 +181,8 @@ impl File {
         self.size
     }
 
-   pub fn get_hash(&self) -> Option<&[u8; 20]> {
-        self.hash.as_ref()
+   pub fn get_hash(&self) -> [u8; 20] {
+        self.hash
     }
 
     pub fn set_state(&mut self, state: FileState) -> () {
