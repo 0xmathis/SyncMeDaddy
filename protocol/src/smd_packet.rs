@@ -74,6 +74,6 @@ impl SMDpacket {
 
 impl Display for SMDpacket {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{{ version: {} | type: {} | length: {} }}", self.version, self.data_type.to_value(), self.data_length)
+        write!(f, "{{ version: {} | type: {:?} | length: {} }}", self.version, self.data_type, self.data_length)
     }
 }

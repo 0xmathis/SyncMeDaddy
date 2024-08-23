@@ -33,6 +33,8 @@ pub fn accept_smd_connect(packet: &SMDpacket) -> bool {
 }
 
 pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<()> {
+    assert!(root_directory.is_absolute());
+
     log::info!("Connected to {}", stream.peer_addr().unwrap());
 
     let user: User = connect(&stream, root_directory)?;
@@ -90,6 +92,8 @@ fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
 }
 
 fn connect(stream: &TcpStream, root_directory: &PathBuf) -> Result<User> {
+    assert!(root_directory.is_absolute());
+
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
     if accept_smd_connect(&packet) {
@@ -107,9 +111,6 @@ fn update(stream: &TcpStream, user: &User) -> Result<(Files, Files)> {
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
     let client_state: Files = Files::from_vec(packet.get_data());
     let stored_state: Files = user.get_state();
-
-    println!("Client : {client_state:?}");
-    println!("Server : {stored_state:?}");
 
     let (to_upload, to_download): (Files, Files) = state_diff(stored_state, client_state);
     let update_answer: UpdateAnswer = UpdateAnswer::from_json(to_upload.clone(), to_download.clone());

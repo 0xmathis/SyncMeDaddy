@@ -23,6 +23,8 @@ impl User {
     }
 
     pub fn new(username: String, root_directory: &PathBuf) -> Option<Self> {
+        assert!(root_directory.is_absolute());
+
         if !Self::check_username(&username) {
             return None;
         }
@@ -35,6 +37,8 @@ impl User {
     }
 
     pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Self {
+        assert!(root_directory.is_absolute());
+
         let data: Vec<u8> = packet.get_data().clone();
         return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap();
     }

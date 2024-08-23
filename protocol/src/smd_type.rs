@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum SMDtype {
     Connect, // From both
     Disconnect, // From server

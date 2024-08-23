@@ -71,6 +71,8 @@ pub fn update_request(stream: &TcpStream, current_state: Files) -> Result<Update
 }
 
 pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files) -> Result<()> {
+    assert!(storage_directory.is_absolute());
+
     let files: HashMap<PathBuf, File> = to_upload.get_data();
 
     for (filename, file) in files.iter() {
@@ -92,6 +94,8 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
 }
 
 pub fn download(stream: &TcpStream, storage_directory: &PathBuf, to_download: Files) -> Result<()> {
+    assert!(storage_directory.is_absolute());
+
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 

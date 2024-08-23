@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, create_dir_all};
 use std::io::Write;
 use std::io::{self, Read, Result};
 use std::os::linux::fs::MetadataExt;
@@ -72,7 +72,12 @@ impl DataTransfer {
     }
 
     pub fn store(self, root_directory: &PathBuf) -> Result<()> {
-        let filepath: PathBuf = root_directory.join(self.get_filename());
+        assert!(root_directory.is_absolute());
+
+        let filename: &PathBuf = self.get_filename();
+        let filepath: PathBuf = root_directory.join(filename);
+        let file_parents: PathBuf = root_directory.join(filename.parent().unwrap());
+        create_dir_all(file_parents)?;
         let mut file_writer = fs::File::create(filepath)?;
         file_writer.write_all(self.get_data())?;
         file_writer.sync_all()?;

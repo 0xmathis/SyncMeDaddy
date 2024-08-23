@@ -2,7 +2,7 @@ use my_json::{File, FileState, Files};
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::fs::{self, read_dir, ReadDir};
+use std::fs::{self, create_dir_all, read_dir, ReadDir};
 use std::io::{self, Result};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
