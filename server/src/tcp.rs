@@ -37,6 +37,9 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
 
     let user: User = connect(&stream, root_directory)?;
     let (to_upload, to_download): (Files, Files) = update(&stream, &user)?;
+
+    println!("to_upload: {to_upload:?}");
+    println!("to_download: {to_download:?}");
     upload(&stream, &user, to_upload)?;
     download(&stream, &user, to_download)?;
     disconnect(stream)
@@ -69,17 +72,18 @@ fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
     let storage_directory: PathBuf = user.get_storage_directory();
 
     for (filename, file) in files.iter() {
-    let filepath: PathBuf = storage_directory.join(filename);
+        let filepath: PathBuf = storage_directory.join(filename);
 
-        let mut buffer: Vec<u8> = Vec::with_capacity(file.get_size() as usize);
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.resize(file.get_size() as usize, 0);
         let mut file_reader: fs::File = fs::File::open(filepath)?;
         file_reader.read_exact(&mut buffer)?;
 
         let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
-        SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
+        SMDpacket::new(1, SMDtype::Download, data_transfer.to_vec()).send_to(stream)?;
     }
 
-    SMDpacket::new(1, SMDtype::Updated, Vec::with_capacity(0)).send_to(stream)?;
+    SMDpacket::new(1, SMDtype::Updated, Vec::new()).send_to(stream)?;
     log::info!("Download finished");
 
     Ok(())

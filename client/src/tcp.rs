@@ -85,7 +85,7 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
         SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
     }
 
-    SMDpacket::new(1, SMDtype::Updated, Vec::with_capacity(0)).send_to(stream)?;
+    SMDpacket::new(1, SMDtype::Updated, Vec::new()).send_to(stream)?;
     log::info!("Upload finished");
 
     Ok(())
