@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::net::{
     Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream
 };
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind, Read, Result};
 use std::path::PathBuf;
 
 use smd_protocol::{smd_packet::SMDpacket, smd_type::SMDtype};
@@ -44,7 +45,7 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
 fn upload(stream: &TcpStream, user: &User, to_upload: Files) -> Result<()> {
     // TODO: Check that client uploaded all files ?
 
-    let sync_directory: &PathBuf = user.get_sync_directory();
+    let storage_directory: PathBuf = user.get_storage_directory();
 
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
@@ -52,26 +53,34 @@ fn upload(stream: &TcpStream, user: &User, to_upload: Files) -> Result<()> {
         match *packet.get_type() {
             SMDtype::Upload => {
                 let file: DataTransfer = DataTransfer::from_vec(packet.get_data());
-                file.store(sync_directory)?;
+                file.store(&storage_directory)?;
             },
             SMDtype::Updated => break,
             _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid type received while upload")),
         }
     };
 
+    log::info!("Upload finished");
     Ok(())
 }
 
 fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
-    loop {
-        let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
+    let files: HashMap<PathBuf, File> = to_download.get_data();
+    let storage_directory: PathBuf = user.get_storage_directory();
 
-        match *packet.get_type() {
-            SMDtype::Download => {},
-            SMDtype::Updated => break,
-            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid type received while download")),
-        }
-    };
+    for (filename, file) in files.iter() {
+    let filepath: PathBuf = storage_directory.join(filename);
+
+        let mut buffer: Vec<u8> = Vec::with_capacity(file.get_size() as usize);
+        let mut file_reader: fs::File = fs::File::open(filepath)?;
+        file_reader.read_exact(&mut buffer)?;
+
+        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
+        SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
+    }
+
+    SMDpacket::new(1, SMDtype::Updated, Vec::with_capacity(0)).send_to(stream)?;
+    log::info!("Download finished");
 
     Ok(())
 }

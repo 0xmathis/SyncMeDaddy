@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, u8};
 use std::io::Read;
 use std::collections::HashMap;
 use std::net::{
@@ -74,9 +74,10 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
     let files: HashMap<PathBuf, File> = to_upload.get_data();
 
     for (filename, file) in files.iter() {
-        let filepath: PathBuf = storage_directory.join(storage_directory);
+        let filepath: PathBuf = storage_directory.join(filename);
 
-        let mut buffer: Vec<u8> = Vec::with_capacity(file.get_size() as usize);
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.resize(file.get_size() as usize, 0);
         let mut file_reader: fs::File = fs::File::open(filepath)?;
         file_reader.read_exact(&mut buffer)?;
 
@@ -84,10 +85,27 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
         SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
     }
 
+    SMDpacket::new(1, SMDtype::Updated, Vec::with_capacity(0)).send_to(stream)?;
+    log::info!("Upload finished");
+
     Ok(())
 }
 
 pub fn download(stream: &TcpStream, storage_directory: &PathBuf, to_download: Files) -> Result<()> {
+    loop {
+        let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
+
+        match *packet.get_type() {
+            SMDtype::Download => {
+                let file: DataTransfer = DataTransfer::from_vec(packet.get_data());
+                file.store(storage_directory)?;
+            },
+            SMDtype::Updated => break,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid type received while upload")),
+        }
+    };
+
+    log::info!("Download finished");
     Ok(())
 }
 

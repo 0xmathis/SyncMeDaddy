@@ -55,6 +55,10 @@ impl User {
         &self.sync_directory
     }
 
+    pub fn get_storage_directory(&self) -> PathBuf {
+        self.get_sync_directory().join(String::from("storage"))
+    }
+
     pub fn get_state(&self) -> Files {
         let state: PathBuf = self.get_sync_directory().join("smd_state.json");
         Files::load_from_file(&state).unwrap()

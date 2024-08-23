@@ -72,7 +72,7 @@ impl DataTransfer {
     }
 
     pub fn store(self, root_directory: &PathBuf) -> Result<()> {
-        let filepath: PathBuf = self.get_filename().join(root_directory);
+        let filepath: PathBuf = root_directory.join(self.get_filename());
         let mut file_writer = fs::File::create(filepath)?;
         file_writer.write_all(self.get_data())?;
         file_writer.sync_all()?;

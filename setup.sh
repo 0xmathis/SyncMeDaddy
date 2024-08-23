@@ -1,10 +1,8 @@
-rm -rf /tmp/smd
+mkdir /tmp/smd 2> /dev/null
+rm -rf /tmp/smd/*
+cd /tmp/smd
 
-cd /tmp
-mkdir smd
-
-cd smd
 mkdir -p client/storage server/user/storage
 
-cd client/storage
-echo test1 > test1.txt
+echo test1 > client/storage/test1.txt
+echo test2 > server/user/storage/test2.txt
