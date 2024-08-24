@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::net::{
-    Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream
-};
 use std::io::{Error, ErrorKind, Read, Result};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 
 use smd_protocol::{smd_packet::SMDpacket, smd_type::SMDtype};
-use utils::my_json::{DataTransfer, File, Files, UpdateAnswer};
+use utils::data_transfer::DataTransfer;
+use utils::file::File;
+use utils::files::Files;
+use utils::update_answer::UpdateAnswer;
 
 use crate::user::User;
 

@@ -1,15 +1,21 @@
-use my_json::{File, FileState, Files};
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::fs::{self, create_dir_all, read_dir, ReadDir};
+use std::fs::{self, read_dir, ReadDir};
 use std::io::{self, Result};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-pub mod my_json;
+use crate::file::File;
+use crate::file_state::FileState;
+use crate::files::Files;
+
+pub mod data_transfer;
+pub mod file;
+pub mod file_state;
+pub mod files;
+pub mod update_answer;
 
 
 pub fn to_valid_syncing_directory(sync_directory: String) -> Result<PathBuf> {
@@ -85,14 +91,7 @@ pub fn tree_directory(directory: &PathBuf) -> Result<Vec<PathBuf>> {
     Ok(output)
 }
 
-pub fn time_since_epoch() -> u64 {
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(n) => n.as_secs(),
-        Err(_) => 0,
-    }
-}
-
-pub fn sha1(filepath: &PathBuf) -> [u8; 20] {
+pub fn hash(filepath: &PathBuf) -> [u8; 20] {
     let mut file: fs::File = fs::File::open(filepath).unwrap();
     let mut hasher: Sha1 = Sha1::new();
     io::copy(&mut file, &mut hasher).unwrap();

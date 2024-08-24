@@ -1,20 +1,15 @@
-use std::io::Result;
-use std::net::{
-    Ipv4Addr,
-    TcpStream,
-};
-use std::panic;
-use env_logger:: {
-    Builder,
-    Target,
-};
-use log;
 use clap::Parser;
+use env_logger:: {Builder, Target};
+use log;
 use smd_protocol::smd_type::SMDtype;
-use tcp::*;
-use utils::my_json::{UpdateAnswer, Files};
-use utils::{get_current_state, to_valid_syncing_directory};
+use tcp::{connect, disconnect, download, update_request, upload};
+use std::io::Result;
+use std::net::{Ipv4Addr, TcpStream};
+use std::panic;
 use std::path::PathBuf;
+use utils::files::Files;
+use utils::update_answer::UpdateAnswer;
+use utils::{get_current_state, to_valid_syncing_directory};
 
 use smd_protocol::smd_packet::SMDpacket;
 

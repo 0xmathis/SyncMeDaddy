@@ -3,11 +3,10 @@ use std::fs;
 
 use smd_protocol::smd_packet::SMDpacket;
 use utils::get_current_state;
-use utils::my_json::Files;
+use utils::files::Files;
 
 
 pub struct User {
-    username: String,
     sync_directory: PathBuf,
 }
 
@@ -30,7 +29,7 @@ impl User {
         }
 
         let sync_directory: PathBuf = root_directory.join(&username);
-        let user: Self = Self { username, sync_directory };
+        let user: Self = Self { sync_directory };
         user.init_sync_directory();
 
         Some(user)

@@ -1,16 +1,12 @@
-use std::net::{
-    Ipv4Addr, TcpListener
-};
-use std::io::Result;
-use std::panic;
-use env_logger::{
-    Builder, Target,
-};
-use log;
 use clap::Parser;
+use env_logger::{Builder, Target};
+use log;
+use std::io::Result;
+use std::net::{Ipv4Addr, TcpListener};
+use std::panic;
+use std::path::PathBuf;
 use tcp::handle_connection;
 use utils::to_valid_syncing_directory;
-use std::path::PathBuf;
 
 mod tcp;
 mod user;
@@ -55,11 +51,9 @@ fn main() -> Result<()> {
 
     for stream in server.incoming() {
         match stream {
-            Ok(stream) => {
-                handle_connection(stream, &root_directory)?;
-            }
+            Ok(stream) => handle_connection(stream, &root_directory)?,
             Err(e) => panic!("Encountered IO error: {e}"),
-        }
+        };
     }
 
     Ok(())

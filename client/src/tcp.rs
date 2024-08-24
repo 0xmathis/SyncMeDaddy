@@ -1,22 +1,16 @@
-use std::{fs, u8};
-use std::io::Read;
 use std::collections::HashMap;
-use std::net::{
-    Ipv4Addr,
-    Shutdown,
-    SocketAddr,
-    TcpStream,
-};
-use std::io::{
-    Error,
-    ErrorKind,
-    Result
-};
+use std::io::Read;
+use std::io::{Error, ErrorKind, Result};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::{fs, u8};
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
-use utils::my_json::{DataTransfer, File, Files, UpdateAnswer};
+use utils::data_transfer::DataTransfer;
+use utils::file::File;
+use utils::files::Files;
+use utils::update_answer::UpdateAnswer;
 
 
 pub fn start_tcp_client(ip: Ipv4Addr, port: u16) -> TcpStream {
