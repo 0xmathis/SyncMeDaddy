@@ -1,8 +1,9 @@
+use anyhow::Result;
 use serde::{Serialize, Deserialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Result, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use crate::file::File;
@@ -50,7 +51,7 @@ impl Files {
         let json_string = serde_json::to_string(self).unwrap();
         let mut file = fs::File::create(filepath).unwrap();
 
-        file.write_all(json_string.as_bytes())
+        Ok(file.write_all(json_string.as_bytes())?)
     }
 
     pub fn get_data(self) -> HashMap<PathBuf, File> {

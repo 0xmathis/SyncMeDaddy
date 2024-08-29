@@ -1,7 +1,7 @@
+use anyhow::Result;
 use clap::Parser;
 use env_logger::{Builder, Target};
-use log;
-use std::io::Result;
+use log::{info, warn};
 use std::net::{Ipv4Addr, TcpListener};
 use std::panic;
 use std::path::PathBuf;
@@ -36,13 +36,13 @@ fn init_hooks() {
     }));
 }
 
-fn main() -> Result<()> {
+fn main() -> () {
     init_logger();
     init_hooks();
 
     let args = Args::parse();
-    let root_directory: PathBuf = to_valid_syncing_directory(args.sync_directory)?;
-    log::info!("Syncing directory {:?}", root_directory);
+    let root_directory: PathBuf = to_valid_syncing_directory(args.sync_directory);
+    info!("Syncing directory {:?}", root_directory);
 
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
     const PORT: u16 = 1234;
@@ -51,10 +51,12 @@ fn main() -> Result<()> {
 
     for stream in server.incoming() {
         match stream {
-            Ok(stream) => handle_connection(stream, &root_directory)?,
-            Err(e) => panic!("Encountered IO error: {e}"),
+            Ok(stream) => {
+                if let Err(e) = handle_connection(stream, &root_directory) {
+                    warn!("{e}");
+                }
+            },
+            Err(e) => warn!("Encountered IO error: {e}"),
         };
     }
-
-    Ok(())
 }

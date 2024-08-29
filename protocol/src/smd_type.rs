@@ -1,12 +1,12 @@
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SMDtype {
     Connect, // From both
     Disconnect, // From server
     UpdateRequest, // From client
     Update, // From server
+    Updated, // From both
     Upload, // From client
     Download, // From server
-    Updated, // From both
     Other, // From both
 }
 

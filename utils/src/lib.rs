@@ -1,8 +1,9 @@
+use anyhow::Result;
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::fs::{self, read_dir, ReadDir};
-use std::io::{self, Result};
+use std::io::{copy, Read};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -18,21 +19,22 @@ pub mod files;
 pub mod update_answer;
 
 
-pub fn to_valid_syncing_directory(sync_directory: String) -> Result<PathBuf> {
+pub fn to_valid_syncing_directory(sync_directory: String) -> PathBuf {
     let sync_directory: PathBuf = to_absolute_path(&PathBuf::from_str(&sync_directory).unwrap());
 
-    if !sync_directory.is_dir() {
-        panic!("Path provided ({}) is invalid", sync_directory.to_str().unwrap());
-    }
+    // if !sync_directory.is_dir() {
+    //     panic!("Path provided ({}) is invalid", sync_directory.to_str().unwrap());
+    // }
 
-    Ok(sync_directory)
+    sync_directory
 }
 
 pub fn to_absolute_path(path: &PathBuf) -> PathBuf {
     path.absolutize().unwrap().to_path_buf()
 }
 
-pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Result<Files> {
+pub fn get_current_state(storage_directory: &PathBuf, state_path: PathBuf) -> Result<Files> {
+    let stored_state: Files = Files::load_from_file(&state_path)?;
     let mut paths: Vec<PathBuf> = tree_directory(storage_directory).unwrap();
     paths = paths.iter().map(|path| to_absolute_path(path).strip_prefix(storage_directory).unwrap().to_path_buf()).collect();
 
@@ -94,6 +96,15 @@ pub fn tree_directory(directory: &PathBuf) -> Result<Vec<PathBuf>> {
 pub fn hash(filepath: &PathBuf) -> [u8; 20] {
     let mut file: fs::File = fs::File::open(filepath).unwrap();
     let mut hasher: Sha1 = Sha1::new();
-    io::copy(&mut file, &mut hasher).unwrap();
+    copy(&mut file, &mut hasher).unwrap();
     hasher.finalize().into()
+}
+
+pub fn read_file(file: &File, filepath: PathBuf) -> Result<Vec<u8>> {
+    let mut buffer: Vec<u8> = Vec::new();
+    buffer.resize(file.get_size() as usize, 0);
+    let mut file_reader: fs::File = fs::File::open(filepath)?;
+    file_reader.read_exact(&mut buffer)?;
+
+    return Ok(buffer);
 }

@@ -1,15 +1,8 @@
-use std::fmt::{
-    Display,
-    Formatter,
-    Result,
-};
-use std::io::{
-    self,
-    Read
-};
-use std::io::Write;
+use anyhow::Result;
+use log::trace;
+use std::fmt;
+use std::io::{Read, Write};
 use std::net::TcpStream;
-use log;
 
 use crate::smd_type::SMDtype;
 
@@ -31,17 +24,17 @@ impl SMDpacket {
         }
     }
 
-    pub fn send_to(&self, mut stream: &TcpStream) -> io::Result<()> {
+    pub fn send_to(&self, mut stream: &TcpStream) -> Result<()> {
         stream.write_all(&[self.version])?;
         stream.write_all(&[self.data_type.to_value()])?;
         stream.write_all(&self.data_length.to_be_bytes())?;
         stream.write_all(&self.data)?;
 
-        log::info!("To : {} | Sending : {}", stream.peer_addr()?, self);
+        trace!("To: {} | Sending: {}", stream.peer_addr().expect("0.0.0.0:0"), self);
         Ok(())
     }
 
-    pub fn receive_from(mut stream: &TcpStream) -> io::Result<SMDpacket> {
+    pub fn receive_from(mut stream: &TcpStream) -> Result<SMDpacket> {
         let mut version: [u8; 1] = [0; 1];
         let mut data_type: [u8; 1] = [0; 1];
         let mut data_length: [u8; 4] = [0; 4];
@@ -59,7 +52,7 @@ impl SMDpacket {
         stream.read_exact(&mut data)?;
         let packet: Self = Self::new(version, data_type, data);
 
-        log::info!("From : {} | Received {}", stream.peer_addr()?, packet);
+        trace!("From: {} | Received: {}", stream.peer_addr().expect("0.0.0.0:0"), packet);
         Ok(packet)
     }
 
@@ -72,8 +65,8 @@ impl SMDpacket {
     }
 }
 
-impl Display for SMDpacket {
-    fn fmt(&self, f: &mut Formatter) -> Result {
+impl fmt::Display for SMDpacket {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{ version: {} | type: {:?} | length: {} }}", self.version, self.data_type, self.data_length)
     }
 }

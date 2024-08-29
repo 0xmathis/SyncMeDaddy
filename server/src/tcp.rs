@@ -1,6 +1,8 @@
+use anyhow::{bail, Result};
+use log::{debug, error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{Error, ErrorKind, Read, Result};
+use std::io::Read;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 
@@ -16,10 +18,10 @@ use crate::user::User;
 pub fn start_tcp_server(ip: Ipv4Addr, port: u16) -> TcpListener {
     match TcpListener::bind(SocketAddr::from((ip, port))) {
         Ok(server) => {
-            log::info!("Server listening on {ip}:{port}");
+            info!("Server listening on {ip}:{port}");
             return server;
         }
-        Err(e) => panic!("Error starting server : {{ {e} }}"),
+        Err(e) => panic!("Error starting server: {{ {e} }}"),
     };
 }
 
@@ -36,16 +38,35 @@ pub fn accept_smd_connect(packet: &SMDpacket) -> bool {
 pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<()> {
     assert!(root_directory.is_absolute());
 
-    log::info!("Connected to {}", stream.peer_addr().unwrap());
+    info!("Connected to {}", stream.peer_addr().expect("0.0.0.0:0"));
 
-    let user: User = connect(&stream, root_directory)?;
-    let (to_upload, to_download): (Files, Files) = update(&stream, &user)?;
+    let user: User = match connect(&stream, root_directory) {
+        Ok(user) => {
+            info!("Connection successful to SMD client");
+            user
+        }
+        Err(e) => {
+            bail!("Error connecting to client: {e}");
+        },
+    };
 
-    println!("to_upload: {to_upload:?}");
-    println!("to_download: {to_download:?}");
+    let (to_upload, to_download): (Files, Files) = match update(&stream, &user) {
+        Ok((to_upload, to_download)) => {
+            info!("Update requested");
+            (to_upload, to_download)
+        },
+        Err(e) => {
+            let _ = disconnect(&stream);
+            bail!("Error updating client: {e}");
+        },
+    };
+
+    debug!("to_upload: {to_upload:?}");
+    debug!("to_download: {to_download:?}");
+
     upload(&stream, &user, to_upload)?;
     download(&stream, &user, to_download)?;
-    disconnect(stream)
+    disconnect(&stream)
 }
 
 fn upload(stream: &TcpStream, user: &User, to_upload: Files) -> Result<()> {
@@ -62,11 +83,11 @@ fn upload(stream: &TcpStream, user: &User, to_upload: Files) -> Result<()> {
                 file.store(&storage_directory)?;
             },
             SMDtype::Updated => break,
-            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid type received while upload")),
+            _ => bail!("Invalid type received while upload"),
         }
     };
 
-    log::info!("Upload finished");
+    info!("Upload finished");
     Ok(())
 }
 
@@ -87,7 +108,7 @@ fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
     }
 
     SMDpacket::new(1, SMDtype::Updated, Vec::new()).send_to(stream)?;
-    log::info!("Download finished");
+    info!("Download finished");
 
     Ok(())
 }
@@ -99,13 +120,13 @@ fn connect(stream: &TcpStream, root_directory: &PathBuf) -> Result<User> {
 
     if accept_smd_connect(&packet) {
         SMDpacket::new(1, SMDtype::Connect, Vec::from("OK")).send_to(&stream)?;
-        log::info!("From : {} | Successfully connected", stream.peer_addr()?);
+        info!("From: {} | Successfully connected", stream.peer_addr().expect("0.0.0.0:0"));
         return Ok(User::from_smd_packet(packet, root_directory));
     }
 
-    log::warn!("From : {} | Received invalid Connect packet", stream.peer_addr()?);
+    warn!("From: {} | Received invalid Connect packet", stream.peer_addr().expect("0.0.0.0:0"));
     SMDpacket::new(1, SMDtype::Connect, Vec::from("KO")).send_to(&stream)?;
-    Err(Error::new(ErrorKind::ConnectionRefused, "Connection refused"))
+    bail!("Connection refused");
 }
 
 fn update(stream: &TcpStream, user: &User) -> Result<(Files, Files)> {
@@ -165,9 +186,9 @@ fn state_diff(server_data: Files, client_data: Files) -> (Files, Files) {
     (Files::from_map(to_upload), Files::from_map(to_download))
 }
 
-fn disconnect(stream: TcpStream) -> Result<()> {
+fn disconnect(stream: &TcpStream) -> Result<()> {
     SMDpacket::new(1, SMDtype::Disconnect, Vec::new()).send_to(&stream)?;
-    log::info!("Disconnected from {}", stream.peer_addr()?);
+    info!("Disconnected from {}", stream.peer_addr().expect("0.0.0.0:0"));
     stream.shutdown(Shutdown::Both)?;
 
     Ok(())

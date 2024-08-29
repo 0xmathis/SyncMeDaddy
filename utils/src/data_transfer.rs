@@ -1,7 +1,8 @@
+use anyhow::Result;
 use serde::{Serialize, Deserialize};
 use serde_json::json;
 use std::fs::{self, create_dir_all};
-use std::io::{Result, Write};
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::file::File;
