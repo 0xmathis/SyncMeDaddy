@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
-use serde_json::json;
+use serde_json::{from_str, json};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -14,7 +14,7 @@ pub struct Files(HashMap<PathBuf, File>);
 
 impl Files {
     pub fn empty() -> Self {
-        serde_json::from_str("{}").unwrap()
+        from_str("{}").unwrap()
     }
 
     pub fn from_map(map: HashMap<PathBuf, File>) -> Self {
@@ -29,7 +29,7 @@ impl Files {
         serde_json::from_slice(data).unwrap()
     }
 
-    pub fn load_from_file(filepath: &PathBuf) -> Result<Self> {
+    pub fn load_from_file(filepath: PathBuf) -> Result<Self> {
         if !filepath.exists() || !filepath.is_file() {
             return Ok(Self::empty());
         }

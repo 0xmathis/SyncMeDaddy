@@ -97,14 +97,14 @@ fn main() -> () {
 
     debug!("Remote diffs: {remote_diffs:?}");
 
-    let (to_upload, to_download): (Files, Files) = remote_diffs.get_data();
+    let (to_upload, _): (Files, Files) = remote_diffs.get_data();
 
     if let Err(e) = upload(&stream, &storage_path, to_upload) {
         error!("{e}");
         return ();
     };
 
-    if let Err(e) =download(&stream, &storage_path, to_download) {
+    if let Err(e) = download(&stream, &storage_path) {
         error!("{e}");
         return ();
     };

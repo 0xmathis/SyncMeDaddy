@@ -24,13 +24,13 @@ impl SMDpacket {
         }
     }
 
-    pub fn send_to(&self, mut stream: &TcpStream) -> Result<()> {
+    pub fn send_to(self, mut stream: &TcpStream) -> Result<()> {
         stream.write_all(&[self.version])?;
         stream.write_all(&[self.data_type.to_value()])?;
         stream.write_all(&self.data_length.to_be_bytes())?;
         stream.write_all(&self.data)?;
 
-        trace!("To: {} | Sending: {}", stream.peer_addr().expect("0.0.0.0:0"), self);
+        trace!("To: {:?} | Sending: {}", stream.peer_addr(), self);
         Ok(())
     }
 
@@ -52,7 +52,7 @@ impl SMDpacket {
         stream.read_exact(&mut data)?;
         let packet: Self = Self::new(version, data_type, data);
 
-        trace!("From: {} | Received: {}", stream.peer_addr().expect("0.0.0.0:0"), packet);
+        trace!("From: {:?} | Received: {}", stream.peer_addr(), packet);
         Ok(packet)
     }
 

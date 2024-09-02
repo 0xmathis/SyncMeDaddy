@@ -1,7 +1,7 @@
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
-use serde_json::json;
-use std::fs::{self, create_dir_all};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, json};
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -25,7 +25,7 @@ impl DataTransfer {
     }
 
     pub fn from_vec(data: &Vec<u8>) -> Self {
-        serde_json::from_slice(data).unwrap()
+        from_slice(data).unwrap()
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
@@ -50,7 +50,7 @@ impl DataTransfer {
         let filename: &PathBuf = self.get_filename();
         let filepath: PathBuf = root_directory.join(filename);
         let file_parents: PathBuf = root_directory.join(filename.parent().unwrap());
-        create_dir_all(file_parents)?;
+        fs::create_dir_all(file_parents)?;
         let mut file_writer = fs::File::create(filepath)?;
         file_writer.write_all(self.get_data())?;
         file_writer.sync_all()?;

@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use log::{error, info, warn};
+use log::{info, warn};
 use utils::read_file;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream};
@@ -65,11 +65,11 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
 
     let files: HashMap<PathBuf, File> = to_upload.get_data();
 
-    for (filename, file) in files.iter() {
-        let filepath: PathBuf = storage_directory.join(filename);
-        let buffer: Vec<u8> = read_file(file, filepath)?;
+    for (filename, file) in files.into_iter() {
+        let filepath: PathBuf = storage_directory.join(&filename);
+        let buffer: Vec<u8> = read_file(filepath, file.get_size() as usize)?;
 
-        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
+        let data_transfer: DataTransfer = DataTransfer::new(filename, file, buffer);
         SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
     }
 
@@ -79,7 +79,7 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files)
     Ok(())
 }
 
-pub fn download(stream: &TcpStream, storage_directory: &PathBuf, to_download: Files) -> Result<()> {
+pub fn download(stream: &TcpStream, storage_directory: &PathBuf) -> Result<()> {
     assert!(storage_directory.is_absolute());
     info!("Download started");
 

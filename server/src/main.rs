@@ -1,7 +1,6 @@
-use anyhow::Result;
 use clap::Parser;
 use env_logger::{Builder, Target};
-use log::{info, warn};
+use log::{error, info, warn};
 use std::net::{Ipv4Addr, TcpListener};
 use std::panic;
 use std::path::PathBuf;
@@ -47,13 +46,22 @@ fn main() -> () {
     const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
     const PORT: u16 = 1234;
 
-    let server: TcpListener = tcp::start_tcp_server(IP, PORT);
+    let server: TcpListener = match tcp::start_tcp_server(IP, PORT) {
+        Ok(server) => {
+            info!("Server listening on {IP}:{PORT}");
+            server
+        },
+        Err(e) => {
+            error!("Error starting server: {e}");
+            return ();
+        },
+    };
 
     for stream in server.incoming() {
         match stream {
             Ok(stream) => {
                 if let Err(e) = handle_connection(stream, &root_directory) {
-                    warn!("{e}");
+                    warn!("Error while handling connection: {e}");
                 }
             },
             Err(e) => warn!("Encountered IO error: {e}"),

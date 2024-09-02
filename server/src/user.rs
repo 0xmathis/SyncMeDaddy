@@ -7,6 +7,7 @@ use utils::files::Files;
 
 
 pub struct User {
+    username: String,
     sync_directory: PathBuf,
 }
 
@@ -29,7 +30,7 @@ impl User {
         }
 
         let sync_directory: PathBuf = root_directory.join(&username);
-        let user: Self = Self { sync_directory };
+        let user: Self = Self { username, sync_directory };
         user.init_sync_directory();
 
         Some(user)
@@ -53,6 +54,10 @@ impl User {
         if !storage_directory.exists() {
             let _ = fs::create_dir(storage_directory);
         }
+    }
+
+    pub fn get_username(&self) -> &String {
+        &self.username
     }
 
     pub fn get_sync_directory(&self) -> &PathBuf {
