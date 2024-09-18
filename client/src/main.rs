@@ -53,7 +53,16 @@ fn main() -> () {
     const PORT: u16 = 1234;
     const USERNAME: &str = "user";
 
-    let current_state: Files = match get_current_state(&storage_path, state_path) {
+
+    let stored_state: Files = match Files::load_from_file(&state_path) {
+        Ok(state) => state,
+        Err(e) => {
+            error!("Fail loading stored state: {e}");
+            return ();
+        }
+    };
+
+    let current_state: Files = match get_current_state(&storage_path, stored_state) {
         Ok(stored_state) => {
             info!("Current state loaded");
             stored_state
@@ -63,6 +72,7 @@ fn main() -> () {
             return ();
         },
     };
+    debug!("current_state: {current_state:?}");
 
     let stream: TcpStream = match tcp::start_tcp_client(IP, PORT) {
         Ok(stream) => {
@@ -83,7 +93,7 @@ fn main() -> () {
         },
     };
 
-    let remote_diffs: UpdateAnswer = match update_request(&stream, current_state) {
+    let remote_diffs: UpdateAnswer = match update_request(&stream, &current_state) {
         Ok(remote_diffs) => {
             info!("Update accepted");
             remote_diffs
@@ -102,16 +112,29 @@ fn main() -> () {
     if let Err(e) = upload(&stream, &storage_path, to_upload) {
         error!("{e}");
         return ();
-    };
+    }
 
     if let Err(e) = download(&stream, &storage_path) {
         error!("{e}");
         return ();
-    };
+    }
 
     if let Ok(packet) = SMDpacket::receive_from(&stream) {
         if let SMDtype::Disconnect = packet.get_type() {
             let _ = disconnect(&stream);
         }
     }
+
+    let end_state: Files = match get_current_state(&storage_path, current_state) {
+        Ok(stored_state) => {
+            info!("End state loaded");
+            stored_state
+        },
+        Err(e) => {
+            error!("Error loading end state: {e}");
+            return ();
+        },
+    };
+
+    debug!("end_state: {end_state:?}");
 }

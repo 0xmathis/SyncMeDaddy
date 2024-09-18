@@ -63,6 +63,7 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
 }
 
 fn upload(stream: &TcpStream, user: &User) -> Result<()> {
+    info!("{}: Upload started", user.get_username());
     // TODO: Check that client uploaded all files ?
 
     let storage_directory: PathBuf = user.get_storage_directory();
@@ -85,6 +86,8 @@ fn upload(stream: &TcpStream, user: &User) -> Result<()> {
 }
 
 fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
+    info!("{}: Download started", user.get_username());
+
     let files: HashMap<PathBuf, File> = to_download.get_data();
     let storage_directory: PathBuf = user.get_storage_directory();
 

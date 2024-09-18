@@ -29,7 +29,7 @@ impl Files {
         serde_json::from_slice(data).unwrap()
     }
 
-    pub fn load_from_file(filepath: PathBuf) -> Result<Self> {
+    pub fn load_from_file(filepath: &PathBuf) -> Result<Self> {
         if !filepath.exists() || !filepath.is_file() {
             return Ok(Self::empty());
         }

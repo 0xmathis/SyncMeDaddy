@@ -40,7 +40,7 @@ pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
     };
 }
 
-pub fn update_request(stream: &TcpStream, current_state: Files) -> Result<UpdateAnswer> {
+pub fn update_request(stream: &TcpStream, current_state: &Files) -> Result<UpdateAnswer> {
     let data: Vec<u8> = current_state.to_vec();
     let packet: SMDpacket = SMDpacket::new(1, SMDtype::UpdateRequest, data);
     packet.send_to(&stream)?;

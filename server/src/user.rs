@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::fs;
 
+use log::error;
 use smd_protocol::smd_packet::SMDpacket;
 use utils::get_current_state;
 use utils::files::Files;
@@ -70,6 +71,8 @@ impl User {
 
     pub fn get_state(&self) -> Files {
         let state_path: PathBuf = self.get_sync_directory().join("smd_state.json");
-        get_current_state(&self.get_storage_directory(), state_path).unwrap()
+        let stored_state: Files = Files::load_from_file(&state_path).unwrap();
+
+        get_current_state(&self.get_storage_directory(), stored_state).unwrap()
     }
 }

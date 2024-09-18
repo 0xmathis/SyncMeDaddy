@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
@@ -33,17 +33,20 @@ pub fn to_absolute_path(path: PathBuf) -> PathBuf {
     path.absolutize().unwrap().to_path_buf()
 }
 
-pub fn get_current_state(storage_directory: &PathBuf, state_path: PathBuf) -> Result<Files> {
-    let stored_state: Files = Files::load_from_file(state_path)?;
-    let mut paths: Vec<PathBuf> = tree_directory(storage_directory);
-    paths = paths
+pub fn to_relative_paths(paths: Vec<PathBuf>, root: &PathBuf) -> Vec<PathBuf> {
+    paths
         .into_iter()
         .map(|path|
             to_absolute_path(path)
-            .strip_prefix(storage_directory)
+            .strip_prefix(root)
             .unwrap()
             .to_path_buf())
-        .collect();
+        .collect()
+}
+
+pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Result<Files> {
+    let mut paths: Vec<PathBuf> = tree_directory(storage_directory);
+    paths = to_relative_paths(paths, storage_directory);
 
     let mut stored_state: HashMap<PathBuf, File> = stored_state.get_data();
     let mut output: HashMap<PathBuf, File> = HashMap::new();
