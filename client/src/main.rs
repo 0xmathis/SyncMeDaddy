@@ -6,7 +6,7 @@ use smd_protocol::smd_type::SMDtype;
 use std::net::{Ipv4Addr, TcpStream};
 use std::panic;
 use std::path::PathBuf;
-use tcp::{connect, disconnect, download, update_request, upload};
+use tcp::{connect, delete, disconnect, download, update_request, upload};
 use utils::files::Files;
 use utils::update_answer::UpdateAnswer;
 use utils::{get_current_state, to_valid_syncing_directory};
@@ -53,9 +53,11 @@ fn main() -> () {
     const PORT: u16 = 1234;
     const USERNAME: &str = "user";
 
-
     let stored_state: Files = match Files::load_from_file(&state_path) {
-        Ok(state) => state,
+        Ok(state) => {
+            info!("Stored state loaded");
+            state
+        },
         Err(e) => {
             error!("Fail loading stored state: {e}");
             return ();
@@ -63,16 +65,15 @@ fn main() -> () {
     };
 
     let current_state: Files = match get_current_state(&storage_path, stored_state) {
-        Ok(stored_state) => {
+        Ok(current_state) => {
             info!("Current state loaded");
-            stored_state
+            current_state
         },
         Err(e) => {
             error!("Error loading current state: {e}");
             return ();
         },
     };
-    debug!("current_state: {current_state:?}");
 
     let stream: TcpStream = match tcp::start_tcp_client(IP, PORT) {
         Ok(stream) => {
@@ -105,11 +106,14 @@ fn main() -> () {
         },
     };
 
-    debug!("Remote diffs: {remote_diffs:?}");
+    let (server_todo, client_todo): (Files, Files) = remote_diffs.data();
 
-    let (to_upload, _): (Files, Files) = remote_diffs.get_data();
+    if let Err(e) = delete(&storage_path, &client_todo) {
+        error!("{e}");
+        return ();
+    }
 
-    if let Err(e) = upload(&stream, &storage_path, to_upload) {
+    if let Err(e) = upload(&stream, &storage_path, &server_todo) {
         error!("{e}");
         return ();
     }
@@ -120,15 +124,15 @@ fn main() -> () {
     }
 
     if let Ok(packet) = SMDpacket::receive_from(&stream) {
-        if let SMDtype::Disconnect = packet.get_type() {
+        if let SMDtype::Disconnect = packet.data_type() {
             let _ = disconnect(&stream);
         }
     }
 
-    let end_state: Files = match get_current_state(&storage_path, current_state) {
-        Ok(stored_state) => {
+    let final_state: Files = match get_current_state(&storage_path, current_state) {
+        Ok(final_state) => {
             info!("End state loaded");
-            stored_state
+            final_state
         },
         Err(e) => {
             error!("Error loading end state: {e}");
@@ -136,5 +140,8 @@ fn main() -> () {
         },
     };
 
-    debug!("end_state: {end_state:?}");
+    match final_state.store_to_file(&state_path) {
+        Ok(()) => info!("State stored"),
+        Err(e) => error!("Error storing state: {e}"),
+    };
 }

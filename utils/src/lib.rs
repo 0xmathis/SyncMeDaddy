@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
@@ -9,12 +9,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::file::File;
-use crate::file_state::FileState;
+use crate::state::State;
 use crate::files::Files;
 
 pub mod data_transfer;
 pub mod file;
-pub mod file_state;
+pub mod state;
 pub mod files;
 pub mod update_answer;
 
@@ -44,11 +44,11 @@ pub fn to_relative_paths(paths: Vec<PathBuf>, root: &PathBuf) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Result<Files> {
+pub fn get_current_state(storage_directory: &PathBuf, mut stored_state: Files) -> Result<Files> {
     let mut paths: Vec<PathBuf> = tree_directory(storage_directory);
     paths = to_relative_paths(paths, storage_directory);
 
-    let mut stored_state: HashMap<PathBuf, File> = stored_state.get_data();
+    let stored_state: &mut HashMap<PathBuf, File> = stored_state.data_mut();
     let mut output: HashMap<PathBuf, File> = HashMap::new();
 
     // Start by checking already synchronised files
@@ -59,13 +59,13 @@ pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Re
 
             let mtime: i64 = metadata.st_mtime();
 
-            if file.get_mtime() < mtime {  // If file has been modified
-                file.set_state(FileState::Edited);
+            if file.mtime() < mtime {  // If file has been modified
+                file.set_state(State::Edited);
             } else {
-                file.set_state(FileState::Unchanged);
+                file.set_state(State::Unchanged);
             }
         } else {  // If file doesn't exist anymore
-            file.set_state(FileState::Deleted);
+            file.set_state(State::Deleted);
         }
 
         output.insert(filepath.to_path_buf(), file.clone());
@@ -78,7 +78,7 @@ pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Re
         }
 
         let absolute_path: PathBuf = storage_directory.join(&filepath);
-        let file: File = File::new(absolute_path, FileState::Created);
+        let file: File = File::new(absolute_path, State::Created);
         output.insert(filepath, file);
     }
 

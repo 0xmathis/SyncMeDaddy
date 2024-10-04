@@ -1,9 +1,8 @@
 use anyhow::{bail, Result};
 use log::{debug, info, warn};
-use utils::read_file;
+use utils::{get_current_state, read_file};
+use utils::state::State;
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::io::Read;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 
@@ -24,8 +23,8 @@ pub fn start_tcp_server(ip: Ipv4Addr, port: u16) -> Result<TcpListener> {
 }
 
 pub fn accept_smd_connect(packet: &SMDpacket) -> bool {
-    if SMDtype::Connect.eq(packet.get_type()) {
-        return packet.get_data().is_ascii();
+    if SMDtype::Connect.eq(packet.data_type()) {
+        return packet.data().is_ascii();
     }
 
     false
@@ -38,7 +37,7 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
 
     let user: User = match connect(&stream, root_directory) {
         Ok(user) => {
-            info!("Connection successful to SMD client: {}", user.get_username());
+            info!("Connection successful to SMD client: {}", user.username());
             user
         }
         Err(e) => {
@@ -46,9 +45,9 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
         },
     };
 
-    let to_download: Files = match update(&stream, &user) {
+    let (server_todo, client_todo): (Files, Files) = match update(&stream, &user) {
         Ok(data) => {
-            info!("{}: Update requested", user.get_username());
+            info!("{}: Update requested", user.username());
             data
         },
         Err(e) => {
@@ -57,23 +56,46 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
         },
     };
 
+    delete(&user, &server_todo)?;
     upload(&stream, &user)?;
-    download(&stream, &user, to_download)?;
-    disconnect(&stream)
+    download(&stream, &user, &client_todo)?;
+    disconnect(&stream)?;
+    user.store_state()
+}
+
+fn delete(user: &User, server_todo: &Files) -> Result<()> {
+    info!("{}: Delete started", user.username());
+
+    let files: &HashMap<PathBuf, File> = server_todo.data();
+    let storage_directory: PathBuf = user.storage_directory();
+
+    for (filename, file) in files.into_iter() {
+        let filepath: PathBuf = storage_directory.join(&filename);
+
+        if State::Deleted.ne(file.state()) {
+            continue;
+        }
+
+        debug!("{}: Delete file \"{:?}\"", user.username(), filename);
+    }
+
+    info!("{}: Delete finished", user.username());
+
+    Ok(())
 }
 
 fn upload(stream: &TcpStream, user: &User) -> Result<()> {
-    info!("{}: Upload started", user.get_username());
+    info!("{}: Upload started", user.username());
     // TODO: Check that client uploaded all files ?
 
-    let storage_directory: PathBuf = user.get_storage_directory();
+    let storage_directory: PathBuf = user.storage_directory();
 
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
-        match *packet.get_type() {
+        match packet.data_type() {
             SMDtype::Upload => {
-                let file: DataTransfer = DataTransfer::from_vec(packet.get_data());
+                let file: DataTransfer = DataTransfer::from_vec(packet.data());
                 file.store(&storage_directory)?;
             },
             SMDtype::Updated => break,
@@ -81,26 +103,26 @@ fn upload(stream: &TcpStream, user: &User) -> Result<()> {
         }
     };
 
-    info!("{}: Upload finished", user.get_username());
+    info!("{}: Upload finished", user.username());
     Ok(())
 }
 
-fn download(stream: &TcpStream, user: &User, to_download: Files) -> Result<()> {
-    info!("{}: Download started", user.get_username());
+fn download(stream: &TcpStream, user: &User, client_todo: &Files) -> Result<()> {
+    info!("{}: Download started", user.username());
 
-    let files: HashMap<PathBuf, File> = to_download.get_data();
-    let storage_directory: PathBuf = user.get_storage_directory();
+    let files: &HashMap<PathBuf, File> = client_todo.data();
+    let storage_directory: PathBuf = user.storage_directory();
 
     for (filename, file) in files.into_iter() {
         let filepath: PathBuf = storage_directory.join(&filename);
-        let buffer: Vec<u8> = read_file(filepath, file.get_size() as usize)?;
+        let buffer: Vec<u8> = read_file(filepath, file.size() as usize)?;
 
-        let data_transfer: DataTransfer = DataTransfer::new(filename, file, buffer);
+        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
         SMDpacket::new(1, SMDtype::Download, data_transfer.to_vec()).send_to(stream)?;
     }
 
     SMDpacket::new(1, SMDtype::Updated, Vec::new()).send_to(stream)?;
-    info!("{}: Download finished", user.get_username());
+    info!("{}: Download finished", user.username());
 
     Ok(())
 }
@@ -121,32 +143,31 @@ fn connect(stream: &TcpStream, root_directory: &PathBuf) -> Result<User> {
     bail!("Connection refused");
 }
 
-fn update(stream: &TcpStream, user: &User) -> Result<Files> {
+fn update(stream: &TcpStream, user: &User) -> Result<(Files, Files)> {
     let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
-    let client_state: Files = Files::from_vec(packet.get_data());
-    let stored_state: Files = user.get_state();
+    let client_state: Files = Files::from_vec(packet.data());
+    let stored_state: Files = user.state();
 
-    let (to_upload, to_download): (Files, Files) = state_diff(stored_state, client_state);
-    let update_answer: UpdateAnswer = UpdateAnswer::from_json(to_upload.clone(), to_download.clone());
+    let (server_todo, client_todo): (Files, Files) = state_diff(stored_state, client_state);
 
+    let update_answer: UpdateAnswer = UpdateAnswer::from_json(server_todo.clone(), client_todo.clone());
     SMDpacket::new(1, SMDtype::Update, update_answer.to_vec()).send_to(&stream)?;
 
-    debug!("{}: to_upload: {to_upload:?}", user.get_username());
-    debug!("{}: to_download: {to_download:?}", user.get_username());
-
-    Ok(to_download)
+    Ok((server_todo, client_todo))
 }
 
 fn state_diff(server_data: Files, client_data: Files) -> (Files, Files) {
     /*
      * Upload means from client to server
      * Download means from server to client
+     * server_todo means files the server needs to update
+     * client_todo means files the client needs to update
      */
 
-    let mut to_upload: HashMap<PathBuf, File> = HashMap::new();
-    let mut to_download: HashMap<PathBuf, File> = HashMap::new();
-    let server_data: HashMap<PathBuf, File> = server_data.get_data();
-    let client_data: HashMap<PathBuf, File> = client_data.get_data();
+    let mut server_todo: HashMap<PathBuf, File> = HashMap::new();
+    let mut client_todo: HashMap<PathBuf, File> = HashMap::new();
+    let server_data: &HashMap<PathBuf, File> = server_data.data();
+    let client_data: &HashMap<PathBuf, File> = client_data.data();
 
     let mut filenames: HashSet<PathBuf> = HashSet::new();
     filenames.extend(server_data.keys().cloned());
@@ -160,24 +181,49 @@ fn state_diff(server_data: Files, client_data: Files) -> (Files, Files) {
             let server_file: &File = server_data.get(&filename).unwrap();
             let client_file: &File = client_data.get(&filename).unwrap();
 
-            if server_file.get_hash() != client_file.get_hash() {
-                // If files are different, we keep the one modified last
-                if server_file.get_mtime() < client_file.get_mtime() { // Last version on client
-                    to_upload.insert(filename, client_file.clone());
-                } else { // Last version on server
-                    to_download.insert(filename, server_file.clone());
-                }
+            match (server_file.state(), client_file.state()) {
+                (State::Unchanged, State::Unchanged) => {},
+                (State::Unchanged, _) => {
+                    server_todo.insert(filename, client_file.clone());
+				},
+                (_, State::Unchanged) => {
+                    client_todo.insert(filename, server_file.clone());
+				},
+                (State::Created, State::Created) |
+                (State::Created, State::Edited) |
+                (State::Edited, State::Created) |
+                (State::Edited, State::Edited) => {
+                    if server_file.hash() != client_file.hash() {
+                        // If files are different, we keep the one modified last
+                        if server_file.mtime() < client_file.mtime() { // Last version on client
+                            server_todo.insert(filename, client_file.clone());
+                        } else { // Last version on server
+                            client_todo.insert(filename, server_file.clone());
+                        }
+                    }
+                },
+                (State::Deleted, State::Deleted) => todo!(),
+                (State::Edited, State::Deleted) => todo!(),
+                (State::Deleted, State::Edited) => todo!(),
+                (State::Deleted, State::Created) => todo!(),
+                (State::Created, State::Deleted) => todo!(),
             }
         } else if server_contains && !client_contains { // If only the server have the file stored
-            let file: &File = server_data.get(&filename).unwrap();
-            to_download.insert(filename, file.clone());
+            let server_file: &File = server_data.get(&filename).unwrap();
+
+            if State::Unchanged.ne(server_file.state()) {
+                client_todo.insert(filename, server_file.clone());
+            }
         } else if client_contains && !server_contains { // If only the client have the file stored
-            let file: &File = client_data.get(&filename).unwrap();
-            to_upload.insert(filename, file.clone());
+            let client_file: &File = client_data.get(&filename).unwrap();
+
+            if State::Unchanged.ne(client_file.state()) {
+                server_todo.insert(filename, client_file.clone());
+            }
         }
     }
 
-    (Files::from_map(to_upload), Files::from_map(to_download))
+    (Files::from_map(server_todo), Files::from_map(client_todo))
 }
 
 fn disconnect(stream: &TcpStream) -> Result<()> {
@@ -186,4 +232,243 @@ fn disconnect(stream: &TcpStream) -> Result<()> {
     stream.shutdown(Shutdown::Both)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod server {
+    use super::*;
+
+    #[test]
+    fn test_state_diff_unchanged_unchanged() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 2, [0; 20], State::Unchanged));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_unchanged_created() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_unchanged_edited() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_unchanged_deleted() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Deleted));
+        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Deleted));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_created_unchanged() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let server_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Created));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Unchanged));
+        client_output.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Created));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_created_created() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Created));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_created_edited() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let server_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
+        client_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
+        client_output.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_created_deleted() {
+        todo!();
+    }
+
+    #[test]
+    fn test_state_diff_edited_unchanged() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let server_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 2, [0; 20], State::Unchanged));
+        client_output.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_edited_created() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Edited));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+
+    #[test]
+    fn test_state_diff_edited_edited() {
+        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
+        let client_output: HashMap<PathBuf, File> = HashMap::new();
+
+        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Edited));
+        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+
+        let server_data: Files = Files::from_map(server_input);
+        let client_data: Files = Files::from_map(client_input);
+        let server_todo: Files = Files::from_map(server_output);
+        let client_todo: Files = Files::from_map(client_output);
+        let result: (Files, Files) = state_diff(server_data, client_data);
+
+        assert_eq!(result, (server_todo, client_todo));
+    }
+    
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_edited_deleted() {
+        todo!();
+    }
+
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_deleted_unchanged() {
+        todo!();
+    }   
+
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_deleted_created() {
+        todo!();
+    }
+
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_deleted_edited() {
+        todo!();
+    }
+
+    #[ignore = "not implemented"]
+    #[test]
+    fn test_state_diff_deleted_deleted() {
+        todo!();
+    }
 }

@@ -32,27 +32,27 @@ impl DataTransfer {
         Vec::from(json!(self).to_string())
     }
 
-    pub fn get_filename(&self) -> &PathBuf {
+    pub fn filename(&self) -> &PathBuf {
         &self.filename
     }
 
-    pub fn get_file(&self) -> &File {
+    pub fn file(&self) -> &File {
         &self.file
     }
 
-    pub fn get_data(&self) -> &Vec<u8> {
+    pub fn data(&self) -> &Vec<u8> {
         &self.data
     }
 
     pub fn store(self, root_directory: &PathBuf) -> Result<()> {
         assert!(root_directory.is_absolute());
 
-        let filename: &PathBuf = self.get_filename();
+        let filename: &PathBuf = self.filename();
         let filepath: PathBuf = root_directory.join(filename);
         let file_parents: PathBuf = root_directory.join(filename.parent().unwrap());
         fs::create_dir_all(file_parents)?;
         let mut file_writer = fs::File::create(filepath)?;
-        file_writer.write_all(self.get_data())?;
+        file_writer.write_all(self.data())?;
         file_writer.sync_all()?;
 
         Ok(())

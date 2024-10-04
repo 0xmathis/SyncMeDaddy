@@ -6,8 +6,8 @@ use crate::files::Files;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateAnswer {
-    to_upload: Files,
-    to_download: Files,
+    server_todo: Files,
+    client_todo: Files,
 }
 
 impl UpdateAnswer {
@@ -15,10 +15,10 @@ impl UpdateAnswer {
         serde_json::from_slice(data).unwrap()
     }
 
-    pub fn from_json(to_upload: Files, to_download: Files) -> UpdateAnswer {
+    pub fn from_json(server_todo: Files, client_todo: Files) -> UpdateAnswer {
         UpdateAnswer {
-            to_upload,
-            to_download,
+            server_todo,
+            client_todo,
         }
     }
 
@@ -26,7 +26,7 @@ impl UpdateAnswer {
         Vec::from(json!(self).to_string())
     }
 
-    pub fn get_data(self) -> (Files, Files) {
-        (self.to_upload, self.to_download)
+    pub fn data(self) -> (Files, Files) {
+        (self.server_todo, self.client_todo)
     }
 }

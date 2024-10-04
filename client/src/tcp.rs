@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
-use log::{info, warn};
+use log::{debug, info, warn};
 use utils::read_file;
+use utils::state::State;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
@@ -24,9 +25,9 @@ pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
     packet.send_to(&stream)?;
     let response: SMDpacket = SMDpacket::receive_from(&stream)?;
 
-    match response.get_type() {
+    match response.data_type() {
         SMDtype::Connect => {
-            let data = response.get_data();
+            let data = response.data();
 
             if Vec::from("OK").eq(data) {
                 return Ok(());
@@ -46,9 +47,9 @@ pub fn update_request(stream: &TcpStream, current_state: &Files) -> Result<Updat
     packet.send_to(&stream)?;
     let response: SMDpacket = SMDpacket::receive_from(&stream)?;
 
-    match response.get_type() {
+    match response.data_type() {
         SMDtype::Update => {
-            let data: &Vec<u8> = response.get_data();
+            let data: &Vec<u8> = response.data();
             let update_answer: UpdateAnswer = UpdateAnswer::from_vec(data);
 
             return Ok(update_answer)
@@ -59,17 +60,38 @@ pub fn update_request(stream: &TcpStream, current_state: &Files) -> Result<Updat
     };
 }
 
-pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, to_upload: Files) -> Result<()> {
+pub fn delete(storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
     assert!(storage_directory.is_absolute());
-    info!("Upload started");
+    info!("Delete started");
 
-    let files: HashMap<PathBuf, File> = to_upload.get_data();
+    let files: &HashMap<PathBuf, File> = client_todo.data();
 
     for (filename, file) in files.into_iter() {
         let filepath: PathBuf = storage_directory.join(&filename);
-        let buffer: Vec<u8> = read_file(filepath, file.get_size() as usize)?;
 
-        let data_transfer: DataTransfer = DataTransfer::new(filename, file, buffer);
+        if State::Deleted.ne(file.state()) {
+            continue;
+        }
+
+        debug!("Delete file \"{:?}\"", filename);
+    }
+
+    info!("Delete finished");
+
+    Ok(())
+}
+
+pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: &Files) -> Result<()> {
+    assert!(storage_directory.is_absolute());
+    info!("Upload started");
+
+    let files: &HashMap<PathBuf, File> = server_todo.data();
+
+    for (filename, file) in files.into_iter() {
+        let filepath: PathBuf = storage_directory.join(&filename);
+        let buffer: Vec<u8> = read_file(filepath, file.size() as usize)?;
+
+        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
         SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
     }
 
@@ -86,15 +108,13 @@ pub fn download(stream: &TcpStream, storage_directory: &PathBuf) -> Result<()> {
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
-        match packet.get_type() {
+        match packet.data_type() {
             SMDtype::Download => {
-                let file: DataTransfer = DataTransfer::from_vec(packet.get_data());
+                let file: DataTransfer = DataTransfer::from_vec(packet.data());
                 file.store(storage_directory)?;
             },
             SMDtype::Updated => break,
-            other => {
-                warn!("Invalid type received: \"{other:?}\"");
-            },
+            other => warn!("Invalid type received: \"{other:?}\""),
         };
     };
 

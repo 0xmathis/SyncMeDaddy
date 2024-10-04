@@ -1,7 +1,8 @@
+use anyhow::{bail, Result};
+use log::{error, info};
 use std::path::{Path, PathBuf};
 use std::fs;
 
-use log::error;
 use smd_protocol::smd_packet::SMDpacket;
 use utils::get_current_state;
 use utils::files::Files;
@@ -40,12 +41,12 @@ impl User {
     pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Self {
         assert!(root_directory.is_absolute());
 
-        let data: Vec<u8> = packet.get_data().clone();
+        let data: Vec<u8> = packet.data().clone();
         return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap();
     }
 
     fn init_sync_directory(&self) -> () {
-        let sync_directory: &PathBuf = self.get_sync_directory();
+        let sync_directory: &PathBuf = self.sync_directory();
         let storage_directory: PathBuf = sync_directory.join(String::from("storage"));
 
         if !sync_directory.exists() {
@@ -57,22 +58,40 @@ impl User {
         }
     }
 
-    pub fn get_username(&self) -> &String {
+    pub fn username(&self) -> &String {
         &self.username
     }
 
-    pub fn get_sync_directory(&self) -> &PathBuf {
+    pub fn sync_directory(&self) -> &PathBuf {
         &self.sync_directory
     }
 
-    pub fn get_storage_directory(&self) -> PathBuf {
-        self.get_sync_directory().join(String::from("storage"))
+    pub fn state_path(&self) -> PathBuf {
+        self.sync_directory().join("smd_state.json")
     }
 
-    pub fn get_state(&self) -> Files {
-        let state_path: PathBuf = self.get_sync_directory().join("smd_state.json");
+    pub fn storage_directory(&self) -> PathBuf {
+        self.sync_directory().join(String::from("storage"))
+    }
+
+    pub fn state(&self) -> Files {
+        let state_path: PathBuf = self.sync_directory().join("smd_state.json");
         let stored_state: Files = Files::load_from_file(&state_path).unwrap();
 
-        get_current_state(&self.get_storage_directory(), stored_state).unwrap()
+        get_current_state(&self.storage_directory(), stored_state).unwrap()
+    }
+
+    pub fn store_state(&self) -> Result<()> {
+        let state_path: PathBuf = self.state_path();
+
+        match self.state().store_to_file(&state_path) {
+            Ok(()) => info!("{}: State stored", self.username()),
+            Err(e) => {
+                error!("{}: Error storing state: {e}", self.username());
+                bail!(e);
+            },
+        };
+
+        Ok(())
     }
 }

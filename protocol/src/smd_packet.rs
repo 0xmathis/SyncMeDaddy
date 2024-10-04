@@ -56,11 +56,11 @@ impl SMDpacket {
         Ok(packet)
     }
 
-    pub fn get_data(&self) -> &Vec<u8> {
+    pub fn data(&self) -> &Vec<u8> {
         &self.data
     }
 
-    pub fn get_type(&self) -> &SMDtype {
+    pub fn data_type(&self) -> &SMDtype {
         &self.data_type
     }
 }

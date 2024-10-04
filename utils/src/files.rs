@@ -7,9 +7,10 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use crate::file::File;
+use crate::state::State;
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Files(HashMap<PathBuf, File>);
 
 impl Files {
@@ -47,14 +48,22 @@ impl Files {
         Vec::from(json!(self).to_string())
     }
 
-    pub fn store_to_file(&self, filepath: &PathBuf) -> Result<()> {
-        let json_string = serde_json::to_string(self).unwrap();
+    pub fn store_to_file(mut self, filepath: &PathBuf) -> Result<()> {
+        for (_, file) in self.data_mut().iter_mut() {
+            file.set_state(State::Unchanged);
+        }
+
+        let json_string = serde_json::to_string(&self).unwrap();
         let mut file = fs::File::create(filepath).unwrap();
 
         Ok(file.write_all(json_string.as_bytes())?)
     }
 
-    pub fn get_data(self) -> HashMap<PathBuf, File> {
-        self.0
+    pub fn data(&self) -> &HashMap<PathBuf, File> {
+        &self.0
+    }
+
+    pub fn data_mut(&mut self) -> &mut HashMap<PathBuf, File> {
+        &mut self.0
     }
 }
