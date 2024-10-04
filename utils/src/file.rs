@@ -1,5 +1,6 @@
+use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
-use std::fs;
+use std::fs::{metadata, Metadata};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 
@@ -15,18 +16,18 @@ pub struct File {
 }
 
 impl File {
-    pub fn new(filepath: PathBuf, state: State) -> Self {
+    pub fn new(filepath: PathBuf, state: State) -> Result<Self> {
         assert!(filepath.is_absolute());
         assert!(filepath.is_file());
 
-        let metadata: fs::Metadata = fs::metadata(&filepath).unwrap();
+        let metadata: Metadata = metadata(&filepath).context("Unable to create file (metadata problem)")?;
 
         let mtime: i64 = metadata.st_mtime();
         let size: u64 = metadata.st_size();
 
         let hash: [u8; 20] = hash(&filepath);
 
-        File::from_data(mtime, size, hash, state)
+        Ok(Self::from_data(mtime, size, hash, state))
     }
 
     pub fn from_data(mtime: i64, size: u64, hash: [u8; 20], state: State) -> Self {

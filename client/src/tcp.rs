@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 use utils::read_file;
 use utils::state::State;
@@ -15,9 +15,7 @@ use utils::update_answer::UpdateAnswer;
 
 
 pub fn start_tcp_client(ip: Ipv4Addr, port: u16) -> Result<TcpStream> {
-    let stream: TcpStream = TcpStream::connect(SocketAddr::from((ip, port)))?;
-
-    Ok(stream)
+    TcpStream::connect(SocketAddr::from((ip, port))).context("Unable to start TCP client")
 }
 
 pub fn connect(stream: &TcpStream, username: &str) -> Result<()> {
@@ -49,8 +47,8 @@ pub fn update_request(stream: &TcpStream, current_state: &Files) -> Result<Updat
 
     match response.data_type() {
         SMDtype::Update => {
-            let data: &Vec<u8> = response.data();
-            let update_answer: UpdateAnswer = UpdateAnswer::from_vec(data);
+            let data: Vec<u8> = response.data().to_vec();
+            let update_answer: UpdateAnswer = UpdateAnswer::from_vec(data)?;
 
             return Ok(update_answer)
         },
@@ -82,6 +80,7 @@ pub fn delete(storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
 }
 
 pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: &Files) -> Result<()> {
+    // Upload means from client to server
     assert!(storage_directory.is_absolute());
     info!("Upload started");
 
@@ -101,17 +100,31 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: &Fil
     Ok(())
 }
 
-pub fn download(stream: &TcpStream, storage_directory: &PathBuf) -> Result<()> {
+pub fn download(stream: &TcpStream, storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
+    // Download means from server to client
     assert!(storage_directory.is_absolute());
     info!("Download started");
+    
+    let client_todo: &HashMap<PathBuf, File> = client_todo.data();
 
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
 
         match packet.data_type() {
             SMDtype::Download => {
-                let file: DataTransfer = DataTransfer::from_vec(packet.data());
-                file.store(storage_directory)?;
+                let data: DataTransfer = match DataTransfer::from_vec(packet.data()) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        warn!("Error during downloading: {e}");
+                        continue;
+                    }
+                };
+
+                if client_todo.contains_key(data.filename()) {
+                    data.store(&storage_directory)?;
+                } else {
+                    warn!("Unknown file received");
+                }
             },
             SMDtype::Updated => break,
             other => warn!("Invalid type received: \"{other:?}\""),

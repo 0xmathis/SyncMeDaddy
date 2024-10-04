@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
 use serde_json::json;
 
@@ -11,8 +12,8 @@ pub struct UpdateAnswer {
 }
 
 impl UpdateAnswer {
-    pub fn from_vec(data: &Vec<u8>) -> Self {
-        serde_json::from_slice(data).unwrap()
+    pub fn from_vec(data: Vec<u8>) -> Result<Self> {
+        serde_json::from_slice(&data).context("Unable to deserialize UpdateAnswer")
     }
 
     pub fn from_json(server_todo: Files, client_todo: Files) -> UpdateAnswer {

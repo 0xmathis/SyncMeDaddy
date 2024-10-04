@@ -1,6 +1,6 @@
 use clap::Parser;
 use env_logger::{Builder, Target};
-use log::{debug, error, info};
+use log::{error, info};
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
 use std::net::{Ipv4Addr, TcpStream};
@@ -118,7 +118,7 @@ fn main() -> () {
         return ();
     }
 
-    if let Err(e) = download(&stream, &storage_path) {
+    if let Err(e) = download(&stream, &storage_path, &client_todo) {
         error!("{e}");
         return ();
     }
@@ -131,7 +131,6 @@ fn main() -> () {
 
     let final_state: Files = match get_current_state(&storage_path, current_state) {
         Ok(final_state) => {
-            info!("End state loaded");
             final_state
         },
         Err(e) => {

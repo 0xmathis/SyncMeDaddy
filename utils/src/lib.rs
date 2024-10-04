@@ -6,7 +6,6 @@ use std::fs;
 use std::io::{copy, Read};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use crate::file::File;
 use crate::state::State;
@@ -20,7 +19,7 @@ pub mod update_answer;
 
 
 pub fn to_valid_syncing_directory(sync_directory: String) -> PathBuf {
-    let sync_directory: PathBuf = to_absolute_path(PathBuf::from_str(&sync_directory).unwrap());
+    let sync_directory: PathBuf = to_absolute_path(PathBuf::from(&sync_directory));
 
     // if !sync_directory.is_dir() {
     //     panic!("Path provided ({}) is invalid", sync_directory.to_str().unwrap());
@@ -30,10 +29,12 @@ pub fn to_valid_syncing_directory(sync_directory: String) -> PathBuf {
 }
 
 pub fn to_absolute_path(path: PathBuf) -> PathBuf {
-    path.absolutize().unwrap().to_path_buf()
+    path.absolutize().expect("Not sure if this can fail").to_path_buf()
 }
 
 pub fn to_relative_paths(paths: Vec<PathBuf>, root: &PathBuf) -> Vec<PathBuf> {
+    assert!(root.is_absolute());
+
     paths
         .into_iter()
         .map(|path|
@@ -78,7 +79,10 @@ pub fn get_current_state(storage_directory: &PathBuf, mut stored_state: Files) -
         }
 
         let absolute_path: PathBuf = storage_directory.join(&filepath);
-        let file: File = File::new(absolute_path, State::Created);
+        let Ok(file) = File::new(absolute_path, State::Created) else {
+            continue;
+        };
+
         output.insert(filepath, file);
     }
 

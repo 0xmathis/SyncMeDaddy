@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use log::{error, info};
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -24,25 +24,25 @@ impl User {
         false
     }
 
-    pub fn new(username: String, root_directory: &PathBuf) -> Option<Self> {
+    pub fn new(username: String, root_directory: &PathBuf) -> Result<Self> {
         assert!(root_directory.is_absolute());
 
         if !Self::check_username(&username) {
-            return None;
+            bail!("Invalid username");
         }
 
         let sync_directory: PathBuf = root_directory.join(&username);
         let user: Self = Self { username, sync_directory };
         user.init_sync_directory();
 
-        Some(user)
+        Ok(user)
     }
 
-    pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Self {
+    pub fn from_smd_packet(packet: SMDpacket, root_directory: &PathBuf) -> Result<Self> {
         assert!(root_directory.is_absolute());
 
-        let data: Vec<u8> = packet.data().clone();
-        return Self::new(String::from_utf8(data).unwrap(), root_directory).unwrap();
+        let data: String = String::from_utf8(packet.data().clone()).context("Unable to deserialize SMDpacket to User")?;
+        Self::new(data, root_directory).context("Unable to deserialize SMDpacket to User")
     }
 
     fn init_sync_directory(&self) -> () {

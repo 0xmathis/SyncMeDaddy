@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, json};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::file::File;
 
@@ -24,8 +24,8 @@ impl DataTransfer {
         }
     }
 
-    pub fn from_vec(data: &Vec<u8>) -> Self {
-        from_slice(data).unwrap()
+    pub fn from_vec(data: &Vec<u8>) -> Result<Self> {
+        from_slice(data).context("Failed to deserialize DataTransfer data")
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
@@ -49,8 +49,9 @@ impl DataTransfer {
 
         let filename: &PathBuf = self.filename();
         let filepath: PathBuf = root_directory.join(filename);
-        let file_parents: PathBuf = root_directory.join(filename.parent().unwrap());
-        fs::create_dir_all(file_parents)?;
+        let parent: &Path = filename.parent().expect("Path should not be root");
+        let file_parent: PathBuf = root_directory.join(parent);
+        fs::create_dir_all(file_parent)?;
         let mut file_writer = fs::File::create(filepath)?;
         file_writer.write_all(self.data())?;
         file_writer.sync_all()?;
