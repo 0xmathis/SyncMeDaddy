@@ -1,22 +1,24 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, json};
+use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use crate::file::File;
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataTransfer {
-    filename: PathBuf,
-    file: File,
+    filename: Rc<PathBuf>,
+    file: Rc<RefCell<File>>,
     data: Vec<u8>,
 }
 
 impl DataTransfer {
-    pub fn new(filename: PathBuf, file: File, data: Vec<u8>) -> Self {
+    pub fn new(filename: Rc<PathBuf>, file: Rc<RefCell<File>>, data: Vec<u8>) -> Self {
         Self {
             filename,
             file,
@@ -36,8 +38,8 @@ impl DataTransfer {
         &self.filename
     }
 
-    pub fn file(&self) -> &File {
-        &self.file
+    pub fn file(&self) -> Rc<RefCell<File>> {
+        Rc::clone(&self.file)
     }
 
     pub fn data(&self) -> &Vec<u8> {

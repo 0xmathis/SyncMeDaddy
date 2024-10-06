@@ -1,11 +1,13 @@
 use anyhow::Result;
 use path_absolutize::Absolutize;
 use sha1::{Digest, Sha1};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{copy, Read};
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::file::File;
 use crate::state::State;
@@ -45,36 +47,40 @@ pub fn to_relative_paths(paths: Vec<PathBuf>, root: &PathBuf) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn get_current_state(storage_directory: &PathBuf, mut stored_state: Files) -> Result<Files> {
+pub fn get_current_state(storage_directory: &PathBuf, stored_state: Files) -> Result<Files> {
     let mut paths: Vec<PathBuf> = tree_directory(storage_directory);
     paths = to_relative_paths(paths, storage_directory);
 
-    let stored_state: &mut HashMap<PathBuf, File> = stored_state.data_mut();
-    let mut output: HashMap<PathBuf, File> = HashMap::new();
+    let stored_state: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = stored_state.data();
+    let stored_filenames: HashSet<Rc<PathBuf>> = stored_state.keys().cloned().collect();
+    let mut output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
     // Start by checking already synchronised files
-    for (filepath, file) in stored_state.iter_mut() {
-        if paths.contains(filepath) {  // If the file still exists
-            let absolute_path: PathBuf = storage_directory.join(filepath);
+    for (filepath, file) in stored_state.into_iter() {
+        assert_eq!(Rc::strong_count(&file), 1);
+
+        if paths.contains(&filepath) {  // If the file still exists
+            let absolute_path: PathBuf = storage_directory.join(filepath.to_path_buf());
             let metadata: fs::Metadata = fs::metadata(absolute_path).unwrap();
 
             let mtime: i64 = metadata.st_mtime();
 
-            if file.mtime() < mtime {  // If file has been modified
-                file.set_state(State::Edited);
+            // Should not work
+            if file.borrow().mtime() < mtime {  // If file has been modified
+                file.borrow_mut().set_state(State::Edited);
             } else {
-                file.set_state(State::Unchanged);
+                file.borrow_mut().set_state(State::Unchanged);
             }
         } else {  // If file doesn't exist anymore
-            file.set_state(State::Deleted);
+            file.borrow_mut().set_state(State::Deleted);
         }
 
-        output.insert(filepath.to_path_buf(), file.clone());
+        output.insert(Rc::clone(filepath), Rc::clone(file));
     }
 
     // Then checking new files
     for filepath in paths.into_iter() { 
-        if stored_state.contains_key(&filepath) {
+        if stored_filenames.contains(&filepath) {
             continue;
         }
 
@@ -83,7 +89,7 @@ pub fn get_current_state(storage_directory: &PathBuf, mut stored_state: Files) -
             continue;
         };
 
-        output.insert(filepath, file);
+        output.insert(Rc::new(filepath), Rc::new(RefCell::new(file)));
     }
 
     Ok(Files::from_map(output))

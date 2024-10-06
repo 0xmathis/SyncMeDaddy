@@ -1,24 +1,26 @@
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
 use serde_json::{from_str, json};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::file::File;
 use crate::state::State;
 
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct Files(HashMap<PathBuf, File>);
+pub struct Files(HashMap<Rc<PathBuf>, Rc<RefCell<File>>>);
 
 impl Files {
     pub fn empty() -> Self {
         from_str("{}").expect("I swear this is valid data")
     }
 
-    pub fn from_map(map: HashMap<PathBuf, File>) -> Self {
+    pub fn from_map(map: HashMap<Rc<PathBuf>, Rc<RefCell<File>>>) -> Self {
         Self(map)
     }
 
@@ -48,10 +50,20 @@ impl Files {
         Vec::from(json!(self).to_string())
     }
 
-    pub fn store_to_file(mut self, filepath: &PathBuf) -> Result<()> {
-        for (_, file) in self.data_mut().iter_mut() {
-            file.set_state(State::Unchanged);
-        }
+    pub fn store_to_file(self, filepath: &PathBuf) -> Result<()> {
+        assert!(
+            self.data()
+            .iter()
+            .all(
+                |(_, file)| Rc::strong_count(file) == 1
+            ));
+
+        let _ = self.data()
+            .iter()
+            .map(|(_, file)| {
+                file.borrow_mut().set_state(State::Unchanged);
+            })
+        .collect::<Vec<_>>();
 
         let json_string = serde_json::to_string(&self).expect("Should not panic");
         let mut file = fs::File::create(filepath).context("Unable to open file")?;
@@ -59,12 +71,8 @@ impl Files {
         Ok(file.write_all(json_string.as_bytes())?)
     }
 
-    pub fn data(&self) -> &HashMap<PathBuf, File> {
+    pub fn data(&self) -> &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> {
         &self.0
-    }
-
-    pub fn data_mut(&mut self) -> &mut HashMap<PathBuf, File> {
-        &mut self.0
     }
 
     pub fn diff(server_data: Self, client_data: Self) -> (Self, Self) {
@@ -73,38 +81,42 @@ impl Files {
          * client_todo means files the client needs to update
          */
 
-        let mut server_todo: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_todo: HashMap<PathBuf, File> = HashMap::new();
-        let server_data: &HashMap<PathBuf, File> = server_data.data();
-        let client_data: &HashMap<PathBuf, File> = client_data.data();
+        let mut server_todo: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_todo: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_data: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = server_data.data();
+        let client_data: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = client_data.data();
 
-        let mut filenames: HashSet<PathBuf> = HashSet::new();
-        filenames.extend(server_data.keys().cloned());
-        filenames.extend(client_data.keys().cloned());
+        let mut filenames: HashSet<Rc<PathBuf>> = HashSet::new();
+        let server_filenames: HashSet<Rc<PathBuf>> = server_data.keys().cloned().collect();
+        let client_filenames: HashSet<Rc<PathBuf>> = client_data.keys().cloned().collect();
+        filenames.extend(server_filenames);
+        filenames.extend(client_filenames);
 
         for filename in filenames.into_iter() {
             let server_contains: bool = server_data.contains_key(&filename);
             let client_contains: bool = client_data.contains_key(&filename);
 
             if server_contains && client_contains { // If both have the file stored
-                let server_file: &File = server_data.get(&filename).expect("Can't panic");
-                let client_file: &File = client_data.get(&filename).expect("Can't panic");
+                let server_file: &Rc<RefCell<File>> = server_data.get(&filename).expect("Can't panic");
+                let server_borrow = server_file.borrow();
+                let client_file: &Rc<RefCell<File>> = client_data.get(&filename).expect("Can't panic");
+                let client_borrow = client_file.borrow();
 
-                match (server_file.state(), client_file.state()) {
+                match (server_borrow.state(), client_borrow.state()) {
                     (State::Unchanged, State::Unchanged) => {},
                     (State::Unchanged, _) => {
-                        server_todo.insert(filename, client_file.clone());
+                        server_todo.insert(filename, Rc::clone(client_file));
                     },
                     (_, State::Unchanged) => {
-                        client_todo.insert(filename, server_file.clone());
+                        client_todo.insert(filename, Rc::clone(server_file));
                     },
                     (State::Created, State::Created) |
                         (State::Created, State::Edited) |
                         (State::Edited, State::Created) |
                         (State::Edited, State::Edited) => {
-                            if server_file.hash() != client_file.hash() {
+                            if server_borrow.hash() != client_borrow.hash() {
                                 // If files are different, we keep the one modified last
-                                if server_file.mtime() < client_file.mtime() { // Last version on client
+                                if server_borrow.mtime() < client_borrow.mtime() { // Last version on client
                                     server_todo.insert(filename, client_file.clone());
                                 } else { // Last version on server
                                     client_todo.insert(filename, server_file.clone());
@@ -118,16 +130,16 @@ impl Files {
                         (State::Created, State::Deleted) => todo!(),
                 }
             } else if server_contains && !client_contains { // If only the server have the file stored
-                let server_file: &File = server_data.get(&filename).expect("Can't panic");
+                let server_file: &Rc<RefCell<File>> = server_data.get(&filename).expect("Can't panic");
 
-                if State::Unchanged.ne(server_file.state()) {
-                    client_todo.insert(filename, server_file.clone());
+                if State::Unchanged.ne(server_file.borrow().state()) {
+                    client_todo.insert(filename, Rc::clone(server_file));
                 }
             } else if client_contains && !server_contains { // If only the client have the file stored
-                let client_file: &File = client_data.get(&filename).expect("Can't panic");
+                let client_file: &Rc<RefCell<File>> = client_data.get(&filename).expect("Can't panic");
 
-                if State::Unchanged.ne(client_file.state()) {
-                    server_todo.insert(filename, client_file.clone());
+                if State::Unchanged.ne(client_file.borrow().state()) {
+                    server_todo.insert(filename, Rc::clone(client_file));
                 }
             }
         }
@@ -142,13 +154,13 @@ mod server {
 
     #[test]
     fn test_state_diff_unchanged_unchanged() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 2, [0; 20], State::Unchanged));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Unchanged))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 2, [0; 20], State::Unchanged))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -161,14 +173,14 @@ mod server {
 
     #[test]
     fn test_state_diff_unchanged_created() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
-        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Unchanged))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Created))));
+        server_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Created))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -181,14 +193,14 @@ mod server {
 
     #[test]
     fn test_state_diff_unchanged_edited() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
-        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Unchanged))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Edited))));
+        server_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Edited))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -201,14 +213,14 @@ mod server {
 
     #[test]
     fn test_state_diff_unchanged_deleted() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Unchanged));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Deleted));
-        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Deleted));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Unchanged))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Deleted))));
+        server_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Deleted))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -221,14 +233,14 @@ mod server {
 
     #[test]
     fn test_state_diff_created_unchanged() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let server_output: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Created));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Unchanged));
-        client_output.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Created));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [1; 20], State::Created))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [0; 20], State::Unchanged))));
+        client_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [1; 20], State::Created))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -241,13 +253,13 @@ mod server {
 
     #[test]
     fn test_state_diff_created_created() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Created));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Created))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [0; 20], State::Created))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -260,14 +272,14 @@ mod server {
 
     #[test]
     fn test_state_diff_created_edited() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let server_output: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
-        client_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
-        client_output.insert(PathBuf::from("file"), File::from_data(2, 3, [0; 20], State::Created));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [0; 20], State::Created))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [1; 20], State::Edited))));
+        client_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [0; 20], State::Created))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -286,14 +298,14 @@ mod server {
 
     #[test]
     fn test_state_diff_edited_unchanged() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let server_output: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 2, [0; 20], State::Unchanged));
-        client_output.insert(PathBuf::from("file"), File::from_data(1, 2, [1; 20], State::Edited));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [1; 20], State::Edited))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 2, [0; 20], State::Unchanged))));
+        client_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [1; 20], State::Edited))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -306,14 +318,14 @@ mod server {
 
     #[test]
     fn test_state_diff_edited_created() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Edited));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
-        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Created));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Edited))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Created))));
+        server_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Created))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);
@@ -326,14 +338,14 @@ mod server {
 
     #[test]
     fn test_state_diff_edited_edited() {
-        let mut server_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut client_input: HashMap<PathBuf, File> = HashMap::new();
-        let mut server_output: HashMap<PathBuf, File> = HashMap::new();
-        let client_output: HashMap<PathBuf, File> = HashMap::new();
+        let mut server_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut client_input: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let mut server_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
+        let client_output: HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = HashMap::new();
 
-        server_input.insert(PathBuf::from("file"), File::from_data(1, 2, [0; 20], State::Edited));
-        client_input.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
-        server_output.insert(PathBuf::from("file"), File::from_data(2, 3, [1; 20], State::Edited));
+        server_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(1, 2, [0; 20], State::Edited))));
+        client_input.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Edited))));
+        server_output.insert(Rc::new(PathBuf::from("file")), Rc::new(RefCell::new(File::from_data(2, 3, [1; 20], State::Edited))));
 
         let server_data: Files = Files::from_map(server_input);
         let client_data: Files = Files::from_map(client_input);

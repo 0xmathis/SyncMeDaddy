@@ -108,17 +108,17 @@ fn main() -> () {
 
     let (server_todo, client_todo): (Files, Files) = remote_diffs.data();
 
-    if let Err(e) = delete(&storage_path, &client_todo) {
+    if let Err(e) = delete(&storage_path, client_todo.clone()) {
         error!("{e}");
         return ();
     }
 
-    if let Err(e) = upload(&stream, &storage_path, &server_todo) {
+    if let Err(e) = upload(&stream, &storage_path, server_todo) {
         error!("{e}");
         return ();
     }
 
-    if let Err(e) = download(&stream, &storage_path, &client_todo) {
+    if let Err(e) = download(&stream, &storage_path, client_todo) {
         error!("{e}");
         return ();
     }

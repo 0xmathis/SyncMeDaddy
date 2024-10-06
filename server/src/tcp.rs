@@ -2,9 +2,11 @@ use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 use utils::read_file;
 use utils::state::State;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
@@ -56,9 +58,9 @@ pub fn handle_connection(stream: TcpStream, root_directory: &PathBuf) -> Result<
         },
     };
 
-    delete(&user, &server_todo)?;
-    upload(&stream, &user, &server_todo)?;
-    download(&stream, &user, &client_todo)?;
+    delete(&user, server_todo.clone())?;
+    upload(&stream, &user, server_todo)?;
+    download(&stream, &user, client_todo)?;
     disconnect(&stream)?;
     user.store_state()
 }
@@ -92,16 +94,16 @@ fn update(stream: &TcpStream, user: &User) -> Result<(Files, Files)> {
     Ok((server_todo, client_todo))
 }
 
-fn delete(user: &User, server_todo: &Files) -> Result<()> {
+fn delete(user: &User, server_todo: Files) -> Result<()> {
     info!("{}: Delete started", user.username());
 
-    let files: &HashMap<PathBuf, File> = server_todo.data();
+    let files: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = server_todo.data();
     let storage_directory: PathBuf = user.storage_directory();
 
     for (filename, file) in files.into_iter() {
-        let filepath: PathBuf = storage_directory.join(&filename);
+        let filepath: PathBuf = storage_directory.join(filename.to_path_buf());
 
-        if State::Deleted.ne(file.state()) {
+            if State::Deleted.ne(file.borrow().state()) {
             continue;
         }
 
@@ -113,13 +115,13 @@ fn delete(user: &User, server_todo: &Files) -> Result<()> {
     Ok(())
 }
 
-fn upload(stream: &TcpStream, user: &User, server_todo: &Files) -> Result<()> {
+fn upload(stream: &TcpStream, user: &User, server_todo: Files) -> Result<()> {
     // Upload means from client to server
     info!("{}: Upload started", user.username());
     // TODO: Check that client uploaded all files ?
 
     let storage_directory: PathBuf = user.storage_directory();
-    let server_todo: &HashMap<PathBuf, File> = server_todo.data();
+    let server_todo: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = server_todo.data();
 
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
@@ -149,18 +151,18 @@ fn upload(stream: &TcpStream, user: &User, server_todo: &Files) -> Result<()> {
     Ok(())
 }
 
-fn download(stream: &TcpStream, user: &User, client_todo: &Files) -> Result<()> {
+fn download(stream: &TcpStream, user: &User, client_todo: Files) -> Result<()> {
     // Download means from server to client
     info!("{}: Download started", user.username());
 
-    let files: &HashMap<PathBuf, File> = client_todo.data();
+    let files: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = client_todo.data();
     let storage_directory: PathBuf = user.storage_directory();
 
     for (filename, file) in files.into_iter() {
-        let filepath: PathBuf = storage_directory.join(&filename);
-        let buffer: Vec<u8> = read_file(filepath, file.size() as usize)?;
+        let filepath: PathBuf = storage_directory.join(filename.to_path_buf());
+        let buffer: Vec<u8> = read_file(filepath, file.borrow().size() as usize)?;
 
-        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
+        let data_transfer: DataTransfer = DataTransfer::new(Rc::clone(filename), Rc::clone(file), buffer);
         SMDpacket::new(1, SMDtype::Download, data_transfer.to_vec()).send_to(stream)?;
     }
 

@@ -2,9 +2,11 @@ use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 use utils::read_file;
 use utils::state::State;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use smd_protocol::smd_packet::SMDpacket;
 use smd_protocol::smd_type::SMDtype;
@@ -58,16 +60,16 @@ pub fn update_request(stream: &TcpStream, current_state: &Files) -> Result<Updat
     };
 }
 
-pub fn delete(storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
+pub fn delete(storage_directory: &PathBuf, client_todo: Files) -> Result<()> {
     assert!(storage_directory.is_absolute());
     info!("Delete started");
 
-    let files: &HashMap<PathBuf, File> = client_todo.data();
+    let files: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = client_todo.data();
 
     for (filename, file) in files.into_iter() {
-        let filepath: PathBuf = storage_directory.join(&filename);
+        let filepath: PathBuf = storage_directory.join(filename.to_path_buf());
 
-        if State::Deleted.ne(file.state()) {
+        if State::Deleted.ne(file.borrow().state()) {
             continue;
         }
 
@@ -79,18 +81,18 @@ pub fn delete(storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
     Ok(())
 }
 
-pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: &Files) -> Result<()> {
+pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: Files) -> Result<()> {
     // Upload means from client to server
     assert!(storage_directory.is_absolute());
     info!("Upload started");
 
-    let files: &HashMap<PathBuf, File> = server_todo.data();
+    let files: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = server_todo.data();
 
     for (filename, file) in files.into_iter() {
-        let filepath: PathBuf = storage_directory.join(&filename);
-        let buffer: Vec<u8> = read_file(filepath, file.size() as usize)?;
+        let filepath: PathBuf = storage_directory.join(filename.to_path_buf());
+        let buffer: Vec<u8> = read_file(filepath, file.borrow().size() as usize)?;
 
-        let data_transfer: DataTransfer = DataTransfer::new(filename.clone(), file.clone(), buffer);
+        let data_transfer: DataTransfer = DataTransfer::new(Rc::clone(filename), Rc::clone(file), buffer);
         SMDpacket::new(1, SMDtype::Upload, data_transfer.to_vec()).send_to(stream)?;
     }
 
@@ -100,12 +102,12 @@ pub fn upload(stream: &TcpStream, storage_directory: &PathBuf, server_todo: &Fil
     Ok(())
 }
 
-pub fn download(stream: &TcpStream, storage_directory: &PathBuf, client_todo: &Files) -> Result<()> {
+pub fn download(stream: &TcpStream, storage_directory: &PathBuf, client_todo: Files) -> Result<()> {
     // Download means from server to client
     assert!(storage_directory.is_absolute());
     info!("Download started");
     
-    let client_todo: &HashMap<PathBuf, File> = client_todo.data();
+    let files: &HashMap<Rc<PathBuf>, Rc<RefCell<File>>> = client_todo.data();
 
     loop {
         let packet: SMDpacket = SMDpacket::receive_from(&stream)?;
@@ -120,7 +122,7 @@ pub fn download(stream: &TcpStream, storage_directory: &PathBuf, client_todo: &F
                     }
                 };
 
-                if client_todo.contains_key(data.filename()) {
+                if files.contains_key(data.filename()) {
                     data.store(&storage_directory)?;
                 } else {
                     warn!("Unknown file received");
