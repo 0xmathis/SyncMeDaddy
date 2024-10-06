@@ -19,7 +19,7 @@ mod tcp;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Directory to synchronize
-    sync_directory: String,
+    sync_directory: PathBuf,
 }
 
 

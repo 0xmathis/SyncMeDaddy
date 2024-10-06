@@ -16,7 +16,7 @@ mod user;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Directory to synchronize
-    sync_directory: String,
+    sync_directory: PathBuf,
 }
 
 fn init_logger() {
@@ -66,5 +66,7 @@ fn main() -> () {
             },
             Err(e) => warn!("Encountered IO error: {e}"),
         };
+
+        break;
     }
 }

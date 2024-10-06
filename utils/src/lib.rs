@@ -18,8 +18,8 @@ pub mod files;
 pub mod update_answer;
 
 
-pub fn to_valid_syncing_directory(sync_directory: String) -> PathBuf {
-    let sync_directory: PathBuf = to_absolute_path(PathBuf::from(&sync_directory));
+pub fn to_valid_syncing_directory(sync_directory: PathBuf) -> PathBuf {
+    let sync_directory: PathBuf = to_absolute_path(sync_directory);
 
     // if !sync_directory.is_dir() {
     //     panic!("Path provided ({}) is invalid", sync_directory.to_str().unwrap());
